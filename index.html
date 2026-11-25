@@ -211,6 +211,13 @@ dd{margin:0;color:var(--fg-dim)}
       <div class="row"><label for="rd_res">Image size</label><select id="rd_res"><option value="1">1x (viewport)</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option></select></div>
       <button class="btn" type="button" id="rd_save">Save image (PNG)</button>
     </div></details>
+    <details class="panel"><summary>Play mode</summary><div class="pbody">
+      <div id="pl_note" class="muted"></div>
+      <button class="btn" type="button" id="pl_btn">Play</button>
+      <div class="row"><label for="pl_walk">Walk speed</label><input id="pl_walk" type="range" min="1" max="20" step="0.5" value="5"><span id="pl_walk_v" class="muted" style="width:26px;text-align:right">5</span></div>
+      <div class="row"><label for="pl_jump">Jump power</label><input id="pl_jump" type="range" min="0" max="25" step="0.5" value="9"><span id="pl_jump_v" class="muted" style="width:26px;text-align:right">9</span></div>
+      <div class="muted">WASD or arrows walk, Space jumps, mouse looks (locked), Esc stops.</div>
+    </div></details>
     <details class="panel"><summary>Shortcuts</summary><div class="pbody"><dl>
       <dt>Q W E R T Y</dt><dd>Select, Move, Vertex, Triangle, Rotate, Scale</dd>
       <dt>P / B</dt><dd>Paint brush / Bucket fill (uses the Color picker)</dd>
@@ -781,6 +788,143 @@ $('renderBtn').addEventListener('click',()=>setRender(!R.on));
 $('rd_save').addEventListener('click',saveRender);
 syncRenderUI();
 
+/* ---------- play mode (only while rendering) ---------- */
+const PL={on:false,p:new THREE.Vector3(),spawn:new THREE.Vector3(),vz:0,grounded:false,keys:new Set(),raf:0,t:0,saved:null};
+const PLR=0.3,PLH=1.7,PLEYE=1.4,PLSTEP=0.45,PLGRAV=25,plDown=new THREE.Vector3(0,0,-1),plUp=new THREE.Vector3(0,0,1),plRay=new THREE.Raycaster();
+const plMat=new THREE.MeshStandardMaterial({color:0xe5484d,roughness:0.6,metalness:0}),plNoseMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.6,metalness:0});
+plMat.onBeforeCompile=gammaHook;plNoseMat.onBeforeCompile=gammaHook;
+const player=new THREE.Group();
+{
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(PLR,PLR,PLH-2*PLR,16),plMat);body.rotation.x=Math.PI/2;body.position.z=PLH/2;
+  const lo=new THREE.Mesh(new THREE.SphereGeometry(PLR,16,12),plMat);lo.position.z=PLR;
+  const hi=new THREE.Mesh(new THREE.SphereGeometry(PLR,16,12),plMat);hi.position.z=PLH-PLR;
+  const nose=new THREE.Mesh(new THREE.SphereGeometry(0.1,12,8),plNoseMat);nose.position.set(0,PLR*0.9,PLEYE);
+  player.add(body,lo,hi,nose);player.children.forEach(m=>{m.castShadow=true;});
+}
+player.visible=false;scene.add(player);
+function plCast(o,d,far){
+  if(!tris.length)return null;
+  plRay.set(o,d);plRay.far=far;
+  const h=plRay.intersectObject(solid,false);
+  return h.length?h[0]:null;
+}
+function plGroundH(x,y,feet){
+  let g=-Infinity;
+  if(R.ground&&Math.abs(x)<300&&Math.abs(y)<300)g=R.groundZ;
+  const h=plCast(new THREE.Vector3(x,y,feet+PLSTEP),plDown,1e5);
+  if(h&&h.point.z>g)g=h.point.z;
+  return g;
+}
+function syncPlayUI(){
+  $('pl_btn').disabled=!R.on&&!PL.on;
+  $('pl_btn').textContent=PL.on?'Stop':'Play';
+  $('pl_note').textContent=PL.on?'Playing. Esc or Stop to leave.':R.on?'Ready. Press Play.':'Turn on Render to play.';
+}
+function plFrame(t){
+  PL.raf=0;if(!PL.on)return;
+  if(!R.on){stopPlay();return;}
+  const dt=Math.min(0.05,(t-PL.t)/1000||0.016);PL.t=t;
+  const walk=Math.max(0,parseFloat($('pl_walk').value)||0),jump=Math.max(0,parseFloat($('pl_jump').value)||0);
+  const fx=-Math.cos(view.theta),fy=-Math.sin(view.theta),rx=fy,ry=-fx,K=PL.keys;
+  const f=(K.has('KeyW')||K.has('ArrowUp'))-(K.has('KeyS')||K.has('ArrowDown')),s=(K.has('KeyD')||K.has('ArrowRight'))-(K.has('KeyA')||K.has('ArrowLeft'));
+  let mx=fx*f+rx*s,my=fy*f+ry*s;const ml=Math.hypot(mx,my);
+  if(ml>0){
+    mx=mx/ml*walk*dt;my=my/ml*walk*dt;
+    const dist=Math.hypot(mx,my);
+    if(dist>1e-9){
+      const dir=new THREE.Vector3(mx/dist,my/dist,0);
+      player.rotation.z=Math.atan2(-dir.x,dir.y);
+      [0.55,1.3].forEach(hz=>{
+        const h=plCast(new THREE.Vector3(PL.p.x,PL.p.y,PL.p.z+hz),dir,PLR+dist);
+        if(!h||!h.face)return;
+        const n=h.face.normal.clone();
+        if(Math.abs(n.z)>0.7)return;
+        n.z=0;if(n.lengthSq()<1e-9)return;n.normalize();if(n.dot(dir)>0)n.negate();
+        const into=mx*n.x+my*n.y;
+        if(into<0){mx-=n.x*into;my-=n.y*into;}
+        if(h.distance<PLR){const pu=PLR-h.distance;mx+=n.x*pu;my+=n.y*pu;}
+      });
+      PL.p.x+=mx;PL.p.y+=my;
+    }
+  }
+  if(K.has('Space')&&PL.grounded){PL.vz=jump;PL.grounded=false;}
+  const g=plGroundH(PL.p.x,PL.p.y,PL.p.z);
+  PL.vz-=PLGRAV*dt;
+  let nz=PL.p.z+PL.vz*dt;
+  if(PL.vz>0){
+    const hc=plCast(new THREE.Vector3(PL.p.x,PL.p.y,PL.p.z+PLH-PLR),plUp,PL.vz*dt+PLR+0.02);
+    if(hc){PL.vz=0;nz=PL.p.z;}
+  }
+  const snap=PL.grounded&&PL.vz<=0&&g>-1e8&&PL.p.z-g<=0.3;
+  if(PL.vz<=0&&(nz<=g||snap)){PL.p.z=g;PL.vz=0;PL.grounded=true;}
+  else{PL.p.z=nz;PL.grounded=false;}
+  if(PL.p.z<-60){PL.p.copy(PL.spawn);PL.vz=0;PL.grounded=false;}
+  player.position.copy(PL.p);
+  view.target.set(PL.p.x,PL.p.y,PL.p.z+PLEYE);
+  updateCamera();requestRender();
+  PL.raf=requestAnimationFrame(plFrame);
+}
+function startPlay(){
+  if(!R.on){flash('Turn on Render to play');return;}
+  if(PL.on)return;
+  PL.saved={theta:view.theta,phi:view.phi,dist:view.dist,target:view.target.clone(),name:view.name};
+  let sx=0,sy=0,sz=1;
+  if(verts.length){
+    const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
+    verts.forEach(v=>{for(let k=0;k<3;k++){if(v[k]<mn[k])mn[k]=v[k];if(v[k]>mx[k])mx[k]=v[k];}});
+    sx=(mn[0]+mx[0])/2;sy=(mn[1]+mx[1])/2;sz=mx[2]+1;
+  }
+  PL.spawn.set(sx,sy,sz);PL.p.copy(PL.spawn);PL.vz=0;PL.grounded=false;PL.keys.clear();
+  view.phi=Math.PI/2;view.name='Play';
+  PL.on=true;FPV=true;player.visible=false;player.position.copy(PL.p);
+  if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+  syncPlayUI();updateCamera();updateInfo();
+  flash('Play: WASD or arrows walk, Space jumps, mouse looks, Esc stops');
+  try{const rq=vp.requestPointerLock();if(rq&&rq.catch)rq.catch(()=>{});}catch(err){}
+  PL.t=performance.now();PL.raf=requestAnimationFrame(plFrame);
+}
+function stopPlay(){
+  if(!PL.on)return;
+  PL.on=false;FPV=false;cancelAnimationFrame(PL.raf);PL.raf=0;PL.keys.clear();player.visible=false;
+  if(document.pointerLockElement)document.exitPointerLock();
+  if(PL.saved){view.theta=PL.saved.theta;view.phi=PL.saved.phi;view.dist=PL.saved.dist;view.target.copy(PL.saved.target);view.name=PL.saved.name;}
+  updateCamera();updateInfo();syncPlayUI();requestRender();
+}
+{
+  const _setRender=setRender;
+  setRender=function(on){if(!on&&PL.on)stopPlay();_setRender(on);syncPlayUI();};
+}
+$('pl_btn').addEventListener('click',()=>{if(PL.on)stopPlay();else startPlay();});
+$('pl_walk').addEventListener('input',e=>{$('pl_walk_v').textContent=e.target.value;});
+$('pl_jump').addEventListener('input',e=>{$('pl_jump_v').textContent=e.target.value;});
+window.addEventListener('keydown',e=>{
+  if(!PL.on||!$('modal').hidden)return;
+  const t=e.target;
+  if(t&&(t.tagName==='TEXTAREA'||t.tagName==='SELECT'||(t.tagName==='INPUT'&&t.type!=='range'&&t.type!=='checkbox'&&t.type!=='color')))return;
+  if(e.ctrlKey||e.metaKey||e.code==='Tab'||/^F\d+$/.test(e.code))return;
+  if(e.code==='Escape'){stopPlay();}
+  else if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))PL.keys.add(e.code);
+  e.preventDefault();e.stopImmediatePropagation();
+},true);
+window.addEventListener('keyup',e=>{
+  PL.keys.delete(e.code);
+  if(PL.on&&e.code==='Space')e.preventDefault();
+},true);
+window.addEventListener('blur',()=>{PL.keys.clear();});
+/* first person: mouse lock + mouse look */
+document.addEventListener('pointerlockchange',()=>{if(PL.on&&document.pointerLockElement!==vp)stopPlay();});
+document.addEventListener('pointerlockerror',()=>{if(PL.on){flash('Mouse lock failed, click Stop and try again');stopPlay();}});
+document.addEventListener('mousemove',e=>{
+  if(!PL.on||document.pointerLockElement!==vp)return;
+  view.theta-=e.movementX*0.0025;
+  view.phi=Math.min(Math.PI-0.05,Math.max(0.05,view.phi-e.movementY*0.0025));
+},true);
+['pointerdown','pointermove','pointerup','mousedown','contextmenu'].forEach(n=>{
+  window.addEventListener(n,e=>{if(PL.on&&vp.contains(e.target)&&!e.target.closest('#gizmo')){e.preventDefault();e.stopImmediatePropagation();}},true);
+});
+window.addEventListener('wheel',e=>{if(PL.on&&vp.contains(e.target)){e.preventDefault();e.stopImmediatePropagation();}},{capture:true,passive:false});
+syncPlayUI();
+
 /* ---------- copy, paste, resize shortcuts ---------- */
 let clip=null,pasteN=0;
 function copySel(){
@@ -999,12 +1143,17 @@ function syncRenderLights(cx,cy,cz,ext,D){
 }
 
 /* ---------- camera ---------- */
+var FPV=false; /* first-person view (play mode) */
 function updateCamera(){
   const s=Math.sin(view.phi),c=Math.cos(view.phi);
   const off=new THREE.Vector3(s*Math.cos(view.theta),s*Math.sin(view.theta),c).multiplyScalar(view.dist);
   const aspect=W/H,hh=view.dist*Math.tan(persp.fov*Math.PI/360);
   persp.aspect=aspect;persp.near=Math.max(0.1,view.dist*0.001);persp.far=Math.max(400,view.dist*200);persp.updateProjectionMatrix();
   ortho.left=-hh*aspect;ortho.right=hh*aspect;ortho.top=hh;ortho.bottom=-hh;ortho.near=-Math.max(500,view.dist*200);ortho.far=Math.max(500,view.dist*200);ortho.updateProjectionMatrix();
+  if(FPV){
+    const fd=new THREE.Vector3(s*Math.cos(view.theta),s*Math.sin(view.theta),c);
+    [persp,ortho].forEach(cam=>{cam.position.copy(view.target);cam.up.set(0,0,1);cam.lookAt(view.target.clone().sub(fd));cam.updateMatrixWorld(true);});
+  }else
   [persp,ortho].forEach(cam=>{cam.position.copy(view.target).add(off);cam.up.set(0,0,1);cam.lookAt(view.target);cam.updateMatrixWorld(true);});
   camera=view.ortho?ortho:persp;
   updateDotPull();
