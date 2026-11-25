@@ -160,6 +160,34 @@ dd{margin:0;color:var(--fg-dim)}
         <button class="btn" type="button" data-run="del">Delete</button>
       </div>
     </div></details>
+    <details class="panel" id="rigPanel"><summary>Rig</summary><div class="pbody">
+      <div id="rg_info" class="muted">No bones yet</div>
+      <select id="rg_list" size="5" style="width:100%"></select>
+      <div class="grid2">
+        <button class="btn" type="button" data-rg="add">Add bone</button>
+        <button class="btn" type="button" data-rg="del" data-need="1">Delete bone</button>
+        <button class="btn" type="button" data-rg="bind" data-need="1">Bind selection</button>
+        <button class="btn" type="button" data-rg="unbind" data-need="1">Unbind selection</button>
+        <button class="btn" type="button" data-rg="selb" data-need="1">Select bound</button>
+        <button class="btn" type="button" data-rg="auto">Auto bind</button>
+        <button class="btn" type="button" id="rg_pose" aria-pressed="false">Pose mode: off</button>
+        <button class="btn" type="button" id="rg_reset">Reset pose</button>
+      </div>
+      <div class="muted">Click a bone, then use the Move or Rotate tool and drag its gizmo. Nothing is kept: leaving pose mode restores the model.</div>
+      <div class="row"><label for="rg_name">Name</label><input id="rg_name" type="text" disabled></div>
+      <div class="row"><label for="rg_x">X</label><input id="rg_x" type="number" step="0.1" disabled></div>
+      <div class="row"><label for="rg_y">Y</label><input id="rg_y" type="number" step="0.1" disabled></div>
+      <div class="row"><label for="rg_z">Z</label><input id="rg_z" type="number" step="0.1" disabled></div>
+      <div class="grid2">
+        <button class="btn" type="button" data-rg="rx-" data-need="1">Rotate X -15</button>
+        <button class="btn" type="button" data-rg="rx+" data-need="1">Rotate X +15</button>
+        <button class="btn" type="button" data-rg="ry-" data-need="1">Rotate Y -15</button>
+        <button class="btn" type="button" data-rg="ry+" data-need="1">Rotate Y +15</button>
+        <button class="btn" type="button" data-rg="rz-" data-need="1">Rotate Z -15</button>
+        <button class="btn" type="button" data-rg="rz+" data-need="1">Rotate Z +15</button>
+      </div>
+      <div class="muted">With this panel open, drag a bone joint in the view to move it, its child bones and the vertices bound to them.</div>
+    </div></details>
     <details class="panel"><summary>Light</summary><div class="pbody">
       <div id="lt_info" class="muted">No light selected</div>
       <div class="grid2">
@@ -276,23 +304,25 @@ let plane='XY',planeOff=0,snapOn=true,snapSize=0.5;
 let undoStack=[],redoStack=[],mv=null,drag=null,lastMouse=null,flashMsg='',flashT=0,edgeCount=0;
 let W=300,H=300,saveT=0;
 let lights=[],selL=-1;
+let bones=[],vb=[],selB=-1;
 let images=[],atlas=null,atlasDirty=false,pixelTex=false,imgSaveT=0;const texCache=new Map();
 const NORM={XY:new THREE.Vector3(0,0,1),XZ:new THREE.Vector3(0,1,0),YZ:new THREE.Vector3(1,0,0)};
 const NAXIS={XY:2,XZ:1,YZ:0};
 const AX={x:new THREE.Vector3(1,0,0),y:new THREE.Vector3(0,1,0),z:new THREE.Vector3(0,0,1)};
 
 /* ---------- history, storage ---------- */
-const snap0=()=>JSON.stringify({v:verts,t:tris,l:lights});
-function pushUndo(){undoStack.push(snap0());if(undoStack.length>100)undoStack.shift();redoStack.length=0;}
-function applySnap(s){const o=JSON.parse(s);verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l:[];if(selL>=lights.length)selL=-1;selV=new Set([...selV].filter(i=>i<verts.length));pending=[];changed();}
+const snap0=()=>JSON.stringify({v:verts,t:tris,l:lights,b:bones,vb:vb});
+let poseOn=false,poseSnap=null;
+function pushUndo(){if(poseOn)return;undoStack.push(snap0());if(undoStack.length>100)undoStack.shift();redoStack.length=0;}
+function applySnap(s){const o=JSON.parse(s);verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l:[];bones=Array.isArray(o.b)?o.b:[];vb=Array.isArray(o.vb)?o.vb:[];if(selB>=bones.length)selB=-1;syncVB();if(selL>=lights.length)selL=-1;selV=new Set([...selV].filter(i=>i<verts.length));pending=[];changed();}
 function undo(){if(mv)return;if(!undoStack.length){flash('Nothing to undo');return;}redoStack.push(snap0());applySnap(undoStack.pop());}
 function redo(){if(mv)return;if(!redoStack.length){flash('Nothing to redo');return;}undoStack.push(snap0());applySnap(redoStack.pop());}
 function validMesh(o){
   return o&&Array.isArray(o.v)&&Array.isArray(o.t)&&o.v.every(v=>Array.isArray(v)&&v.length===3&&v.every(Number.isFinite))&&
     o.t.every(t=>Array.isArray(t)&&(t.length===3||t.length===4)&&[t[0],t[1],t[2]].every(i=>Number.isInteger(i)&&i>=0&&i<o.v.length)&&(t[3]==null||typeof t[3]==='string'));
 }
-function saveSoon(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(STORE,snap0());}catch(e){}},400);}
-function loadSaved(){try{const s=localStorage.getItem(STORE);if(!s)return false;const o=JSON.parse(s);if(!validMesh(o))return false;verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l.map(cleanLight).filter(Boolean):[];return true;}catch(e){return false;}}
+function saveSoon(){if(poseOn)return;clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(STORE,snap0());}catch(e){}},400);}
+function loadSaved(){try{const s=localStorage.getItem(STORE);if(!s)return false;const o=JSON.parse(s);if(!validMesh(o))return false;verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l.map(cleanLight).filter(Boolean):[];bones=cleanBones(o.b);vb=Array.isArray(o.vb)?o.vb:[];syncVB();return true;}catch(e){return false;}}
 
 /* ---------- primitives ---------- */
 const CUBE_V=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
@@ -472,11 +502,13 @@ function removeVerts(set){
   const map=new Int32Array(verts.length).fill(-1);let n=0;const nv=[];
   verts.forEach((v,i)=>{if(!set.has(i)){map[i]=n++;nv.push(v);}});
   tris=tris.filter(t=>map[t[0]]>=0&&map[t[1]]>=0&&map[t[2]]>=0).map(t=>[map[t[0]],map[t[1]],map[t[2]],t[3]||null]);
+  syncVB();{const nvb=[];verts.forEach((v,i)=>{if(map[i]>=0)nvb.push(vb[i]);});vb=nvb;}
   verts=nv;
   const ns=new Set();selV.forEach(i=>{if(map[i]>=0)ns.add(map[i]);});selV=ns;
 }
 function selTris(){const out=[];tris.forEach((t,i)=>{if(selV.has(t[0])&&selV.has(t[1])&&selV.has(t[2]))out.push(i);});return out;}
 function deleteSel(){
+  if(!selV.size&&selL<0&&selB>=0&&bones[selB]){deleteBone();return;}
   if(!selV.size&&selL>=0&&lights[selL]){pushUndo();lights.splice(selL,1);selL=-1;changed();return;}
   if(!selV.size){flash('Nothing selected');return;}
   pushUndo();
@@ -577,7 +609,7 @@ function mergeSel(){
 function selectAll(){selV=new Set(verts.map((_,i)=>i));changed();}
 function selectNone(){selV=new Set();changed();}
 function selectInvert(){const n=new Set();verts.forEach((_,i)=>{if(!selV.has(i))n.add(i);});selV=n;changed();}
-function newMesh(){pushUndo();verts=[];tris=[];selV=new Set();pending=[];changed();}
+function newMesh(){pushUndo();verts=[];tris=[];bones=[];vb=[];selB=-1;selV=new Set();pending=[];changed();}
 function median(){const m=[0,0,0];selV.forEach(i=>{m[0]+=verts[i][0];m[1]+=verts[i][1];m[2]+=verts[i][2];});const n=selV.size||1;return m.map(x=>x/n);}
 
 /* ---------- three.js scene ---------- */
@@ -723,7 +755,7 @@ function skyBackground(){
   scene.background=skyTex;
 }
 function prepRender(){
-  [edges,points,faceSel,ghost,pendPts,pendLine,planeGrid,gridGroup,gizmo,rotGizmo,sclGizmo,lightGroup].forEach(o=>{o.visible=false;});
+  [edges,points,faceSel,ghost,pendPts,pendLine,planeGrid,gridGroup,gizmo,rotGizmo,sclGizmo,lightGroup,boneGroup].forEach(o=>{o.visible=false;});
   solid.visible=true;solid.material=renderMat;renderMat.roughness=R.rough;
   editLights.forEach(l=>{l.visible=false;});
   const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
@@ -748,7 +780,7 @@ function setRender(on){
   if(!on){
     solid.material=editMat;editLights.forEach(l=>{l.visible=true;});
     sun.visible=sky.visible=ground.visible=false;scene.fog=null;scene.background=editBg;
-    rLights.forEach(o=>{o.visible=false;});lightGroup.visible=true;
+    rLights.forEach(o=>{o.visible=false;});lightGroup.visible=boneGroup.visible=true;
     edges.visible=points.visible=faceSel.visible=true;
     gridGroup.visible=$('gridBtn').getAttribute('aria-pressed')==='true';
     rebuild();updateOverlay();updatePlaneGrid();
@@ -1053,8 +1085,221 @@ let ltPushed=false;
   el.addEventListener('change',()=>{ltPushed=false;});
 });
 
+/* ---------- rig: bones, binding, posing ---------- */
+function cleanBones(a){
+  if(!Array.isArray(a))return [];
+  return a.map((b,i)=>({n:String(b&&b.n||'Bone'),p:b&&Array.isArray(b.p)&&b.p.length===3&&b.p.every(Number.isFinite)?b.p.slice():[0,0,0],par:b&&Number.isInteger(b.par)&&b.par>=0&&b.par<a.length&&b.par!==i?b.par:-1}));
+}
+function syncVB(){
+  while(vb.length<verts.length)vb.push(-1);vb.length=verts.length;
+  for(let i=0;i<vb.length;i++)if(!(vb[i]>=0&&vb[i]<bones.length))vb[i]=-1;
+}
+function setRig(r){bones=r?cleanBones(r.b):[];vb=r&&Array.isArray(r.vb)?r.vb.slice():[];selB=-1;syncVB();}
+function rigLines(){
+  if(!bones.length)return [];
+  syncVB();
+  const o=['#rig bones '+bones.length],g={};
+  bones.forEach((b,i)=>o.push('#rig bone '+i+' '+b.par+' '+b.p.map(n=>n.toFixed(5)).join(' ')+' '+(b.n.replace(/\s+/g,'_')||'Bone')));
+  vb.forEach((k,vi)=>{if(k>=0)(g[k]=g[k]||[]).push(vi);});
+  Object.keys(g).forEach(k=>o.push('#rig verts '+k+' '+g[k].join(' ')));
+  return o;
+}
+function parseRig(text){
+  const B=[],bv=[];
+  text.split(/\r?\n/).forEach(raw=>{
+    const p=raw.trim().split(/\s+/);if(p[0]!=='#rig')return;
+    if(p[1]==='bone'&&p.length>=7){const i=+p[2];if(Number.isInteger(i)&&i>=0&&i<4096)B[i]={n:p.slice(7).join(' ')||'Bone',par:+p[3],p:[+p[4],+p[5],+p[6]]};}
+    else if(p[1]==='verts'){const k=+p[2];p.slice(3).forEach(x=>{const v=+x;if(Number.isInteger(v)&&v>=0)bv[v]=k;});}
+  });
+  if(!B.length)return null;
+  for(let i=0;i<B.length;i++)if(!B[i])B[i]={n:'Bone',par:-1,p:[0,0,0]};
+  const out=[];for(let i=0;i<bv.length;i++)out.push(bv[i]===undefined?-1:bv[i]);
+  return {b:B,vb:out};
+}
+const boneGroup=new THREE.Group();scene.add(boneGroup);
+function syncBones(){
+  while(boneGroup.children.length){const c=boneGroup.children[0];boneGroup.remove(c);c.geometry.dispose();c.material.dispose();}
+  if(!bones.length){requestRender();return;}
+  const BC=[0.35,0.85,1],lp=[],lc=[],pp=[],pc=[],mp=[],mc=[];
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],crs=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],nrm=a=>{const l=Math.hypot(...a)||1;return a.map(n=>n/l);};
+  bones.forEach((b,i)=>{
+    const c=i===selB?SELC:BC;pp.push(...b.p);pc.push(...c);
+    const q=bones[b.par];if(!q)return;
+    const h=q.p,t=b.p,d=sub(t,h),L=Math.hypot(...d);if(L<1e-6)return;
+    const dn=nrm(d),ref=Math.abs(dn[1])<0.9?[0,1,0]:[1,0,0],u=nrm(crs(dn,ref)),v=crs(dn,u),r=L*0.1;
+    const m=[h[0]+d[0]*0.1,h[1]+d[1]*0.1,h[2]+d[2]*0.1];
+    const R=[[1,1],[-1,1],[-1,-1],[1,-1]].map(([x,y])=>[m[0]+(u[0]*x+v[0]*y)*r,m[1]+(u[1]*x+v[1]*y)*r,m[2]+(u[2]*x+v[2]*y)*r]);
+    const sel=i===selB,fh=sel?[0.75,0.5,0.2]:[0.62,0.66,0.66],ft=sel?[0.6,0.4,0.15]:[0.45,0.5,0.5],oc=sel?SELC:BC;
+    for(let k=0;k<4;k++){
+      const A=R[k],B=R[(k+1)%4];
+      mp.push(...h,...A,...B);mc.push(...fh,...fh,...fh);
+      mp.push(...t,...B,...A);mc.push(...ft,...ft,...ft);
+      lp.push(...h,...A,...t,...A,...A,...B);for(let j=0;j<6;j++)lc.push(...oc);
+    }
+  });
+  const mk=(pos,col)=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(col),3));return g;};
+  const ms=new THREE.Mesh(mk(mp,mc),new THREE.MeshBasicMaterial({vertexColors:true,depthTest:false,side:THREE.DoubleSide,transparent:true,opacity:0.9}));
+  const ln=new THREE.LineSegments(mk(lp,lc),new THREE.LineBasicMaterial({vertexColors:true,depthTest:false})),pt=new THREE.Points(mk(pp,pc),ptMat(12));
+  [ms,ln,pt].forEach((o,k)=>{o.frustumCulled=false;o.renderOrder=12+k+(k?1:0);boneGroup.add(o);});
+  requestRender();
+}
+function pickBone(x,y){
+  let best=-1,bd=14*14;
+  bones.forEach((b,i)=>{const p=toScreen(b.p);if(p[2]<-1||p[2]>1)return;const d=(p[0]-x)**2+(p[1]-y)**2;if(d<bd){bd=d;best=i;}});
+  if(best>=0)return best;
+  bd=9*9;
+  bones.forEach((b,i)=>{
+    const q=bones[b.par];if(!q)return;
+    const A=toScreen(q.p),B=toScreen(b.p);if(A[2]<-1||A[2]>1||B[2]<-1||B[2]>1)return;
+    const dx=B[0]-A[0],dy=B[1]-A[1],l2=dx*dx+dy*dy;
+    const t=l2?Math.max(0,Math.min(1,((x-A[0])*dx+(y-A[1])*dy)/l2)):0;
+    const d=(A[0]+dx*t-x)**2+(A[1]+dy*t-y)**2;if(d<bd){bd=d;best=i;}
+  });
+  return best;
+}
+function subtree(bi){
+  const s=new Set([bi]);let ch=true;
+  while(ch){ch=false;bones.forEach((b,i)=>{if(!s.has(i)&&s.has(b.par)){s.add(i);ch=true;}});}
+  return s;
+}
+function rigSnap(bi){
+  syncVB();const sub=subtree(bi),vs=[];
+  vb.forEach((b,i)=>{if(sub.has(b))vs.push([i,verts[i].slice()]);});
+  return {bs:[...sub].map(i=>[i,bones[i].p.slice()]),vs};
+}
+function rigApply(S,f){S.bs.forEach(a=>{bones[a[0]].p=f(a[1]);});S.vs.forEach(a=>{verts[a[0]]=f(a[1]);});}
+function selectBone(i){selB=i;selL=-1;if(poseOn&&i>=0)selV=new Set();changed();}
+function beginBoneDrag(bi,x,y,e){
+  selectBone(bi);
+  const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+  const org=bones[bi].p.slice(),pl=new THREE.Plane().setFromNormalAndCoplanarPoint(dir,new THREE.Vector3().fromArray(org)),h0=rayPlane(x,y,pl);
+  if(!h0)return;
+  const S=rigSnap(bi);let pushed=false;
+  const mvf=ev=>{
+    const q=local(ev),h=rayPlane(q.x,q.y,pl);if(!h)return;
+    const d=h.sub(h0),da=[d.x,d.y,d.z];
+    if(snapOn)for(let k=0;k<3;k++)da[k]=Math.round((org[k]+da[k])/snapSize)*snapSize-org[k];
+    if(!pushed){pushUndo();pushed=true;}
+    rigApply(S,p=>[p[0]+da[0],p[1]+da[1],p[2]+da[2]]);
+    rebuild();syncBones();rigUI();$('coords').textContent='Bone  X '+da[0].toFixed(2)+'  Y '+da[1].toFixed(2)+'  Z '+da[2].toFixed(2);requestRender();
+  };
+  const up=()=>{window.removeEventListener('pointermove',mvf);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);$('coords').textContent='';changed();};
+  window.addEventListener('pointermove',mvf);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
+  try{vp.setPointerCapture(e.pointerId);}catch(err){}
+}
+function beginPoseRot(bi,x,y,e){
+  selectBone(bi);
+  const par=bones[bones[bi].par];if(!par){beginBoneDrag(bi,x,y,e);return;}
+  const piv=new THREE.Vector3().fromArray(par.p),dir=new THREE.Vector3();camera.getWorldDirection(dir);
+  const pl=new THREE.Plane().setFromNormalAndCoplanarPoint(dir,piv),h0=rayPlane(x,y,pl);if(!h0)return;
+  const S=rigSnap(bi),a0=new THREE.Vector3().subVectors(h0,piv),ang0=a0.clone();
+  const mvf=ev=>{
+    const q=local(ev),h=rayPlane(q.x,q.y,pl);if(!h)return;
+    const v=h.sub(piv),qt=new THREE.Quaternion().setFromUnitVectors(ang0.clone().normalize(),v.normalize());
+    rigApply(S,p=>{const r=new THREE.Vector3(p[0]-piv.x,p[1]-piv.y,p[2]-piv.z).applyQuaternion(qt);return [r.x+piv.x,r.y+piv.y,r.z+piv.z];});
+    rebuild();syncBones();rigUI();requestRender();
+  };
+  const up=()=>{window.removeEventListener('pointermove',mvf);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);changed();};
+  window.addEventListener('pointermove',mvf);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
+  try{vp.setPointerCapture(e.pointerId);}catch(err){}
+}
+function setPose(on){
+  if(on===poseOn)return;
+  if(on){poseSnap=snap0();poseOn=true;}
+  else{poseOn=false;if(poseSnap)applySnap(poseSnap);poseSnap=null;}
+  $('rg_pose').textContent='Pose mode: '+(poseOn?'on':'off');$('rg_pose').setAttribute('aria-pressed',poseOn);
+}
+function addBone(){
+  pushUndo();
+  const q=bones[selB];
+  let p=selV.size?median():q?[q.p[0],q.p[1],q.p[2]+0.5]:[0,0,0.8];
+  p=p.map(n=>Math.round(n*1e5)/1e5);
+  bones.push({n:'Bone'+(bones.length+1),p,par:q?selB:-1});
+  selectBone(bones.length-1);
+}
+function deleteBone(){
+  const i=selB,pp=bones[i].par;pushUndo();
+  bones.forEach(b=>{if(b.par===i)b.par=pp;});
+  bones.splice(i,1);bones.forEach(b=>{if(b.par>i)b.par--;});
+  syncVB();vb=vb.map(b=>b===i?-1:b>i?b-1:b);selB=-1;changed();
+}
+function rotBone(ax,deg){
+  const B=bones[selB];if(!B)return;
+  pushUndo();
+  const piv=B.p.slice(),q=new THREE.Quaternion().setFromAxisAngle(AX[ax],deg*D2R);
+  rigApply(rigSnap(selB),p=>{const r=new THREE.Vector3(p[0]-piv[0],p[1]-piv[1],p[2]-piv[2]).applyQuaternion(q);return [r.x+piv[0],r.y+piv[1],r.z+piv[2]];});
+  changed();
+}
+function rigAct(a){
+  if(a==='add'){addBone();return;}
+  if(a==='del'){if(bones[selB])deleteBone();return;}
+  if(a==='auto'){
+    if(!bones.length){flash('Add bones first');return;}
+    pushUndo();syncVB();const ids=selV.size?[...selV]:verts.map((_,i)=>i);
+    ids.forEach(i=>{let bd=1e30,bb=-1;bones.forEach((b,k)=>{const d=(b.p[0]-verts[i][0])**2+(b.p[1]-verts[i][1])**2+(b.p[2]-verts[i][2])**2;if(d<bd){bd=d;bb=k;}});vb[i]=bb;});
+    changed();flash('Bound '+ids.length+' vertices to nearest bones');return;
+  }
+  if(selB<0||!bones[selB]){flash('Select a bone first');return;}
+  if(a==='bind'||a==='unbind'){
+    if(!selV.size){flash('Select vertices first');return;}
+    pushUndo();syncVB();selV.forEach(i=>{vb[i]=a==='bind'?selB:-1;});changed();
+    flash((a==='bind'?'Bound ':'Unbound ')+selV.size+(selV.size===1?' vertex':' vertices'));return;
+  }
+  if(a==='selb'){syncVB();selV=new Set();vb.forEach((b,i)=>{if(b===selB)selV.add(i);});changed();return;}
+  if(a[0]==='r')rotBone(a[1],a[2]==='-'?-15:15);
+}
+function rigUI(){
+  const L=$('rg_list');if(!L)return;
+  syncVB();
+  L.innerHTML='';
+  bones.forEach((b,i)=>{const o=document.createElement('option');o.value=i;o.textContent=(b.par>=0?'   ':'')+b.n;o.selected=i===selB;L.appendChild(o);});
+  const B=bones[selB];
+  document.querySelectorAll('#rigPanel [data-need]').forEach(el=>{el.disabled=!B;});
+  ['rg_name','rg_x','rg_y','rg_z'].forEach(id=>{$(id).disabled=!B;});
+  $('rg_info').textContent=bones.length?bones.length+(bones.length===1?' bone, ':' bones, ')+vb.filter(b=>b>=0).length+' vertices bound'+(B?'. Selected: '+B.n:''):'No bones yet';
+  if(!B)return;
+  const set=(id,v)=>{const el=$(id);if(document.activeElement!==el)el.value=v;};
+  set('rg_name',B.n);set('rg_x',Math.round(B.p[0]*1000)/1000);set('rg_y',Math.round(B.p[1]*1000)/1000);set('rg_z',Math.round(B.p[2]*1000)/1000);
+}
+document.querySelectorAll('#rigPanel [data-rg]').forEach(b=>b.addEventListener('click',()=>rigAct(b.dataset.rg)));
+$('rg_list').addEventListener('change',e=>{const i=parseInt(e.target.value,10);if(bones[i])selectBone(i);});
+$('rg_pose').addEventListener('click',()=>setPose(!poseOn));
+$('rg_reset').addEventListener('click',()=>{if(poseOn&&poseSnap)applySnap(poseSnap);});
+let rgPushed=false;
+$('rg_name').addEventListener('input',e=>{const B=bones[selB];if(!B)return;if(!rgPushed){pushUndo();rgPushed=true;}B.n=e.target.value||'Bone';rigUI();saveSoon();});
+$('rg_name').addEventListener('change',()=>{rgPushed=false;});
+['rg_x','rg_y','rg_z'].forEach((id,k)=>$(id).addEventListener('change',()=>{
+  const B=bones[selB],v=parseFloat($(id).value);if(!B||!Number.isFinite(v))return;
+  pushUndo();const d=v-B.p[k];
+  rigApply(rigSnap(selB),p=>{const r=p.slice();r[k]+=d;return r;});changed();
+}));
+
 /* rotate and scale */
+const boneGz=()=>selB>=0&&!!bones[selB]&&!selV.size&&selL<0;
+function boneGzCenter(){const B=bones[selB],P=bones[B.par];return (tool==='rotate'&&P)?P.p.slice():B.p.slice();}
+function updateBoneMove(x,y){
+  const S=mv.bone;
+  if(!mv.pushed){pushUndo();mv.pushed=!poseOn;}
+  if(mv.kind==='rot'){
+    const hit=rayPlane(x,y,mv.plane);if(!hit)return;
+    const vec=hit.sub(mv.origin),cur=Math.atan2(vec.dot(mv.v),vec.dot(mv.u));
+    let dd=cur-mv.prev;dd=Math.atan2(Math.sin(dd),Math.cos(dd));mv.acc+=dd;mv.prev=cur;
+    let da=mv.acc;if(snapOn){const st=Math.PI/12;da=Math.round(da/st)*st;}
+    const q=new THREE.Quaternion().setFromAxisAngle(mv.axisVec,da),o=mv.origin;
+    rigApply(S,p=>{const r=new THREE.Vector3(p[0]-o.x,p[1]-o.y,p[2]-o.z).applyQuaternion(q);return [r.x+o.x,r.y+o.y,r.z+o.z];});
+    $('coords').textContent='Rotate '+(da/D2R).toFixed(1)+' deg';
+  }else{
+    let d;
+    if(mv.kind==='axis'){const t=axisParam(x,y,mv.origin,mv.axisVec);if(t===null)return;d=mv.axisVec.clone().multiplyScalar(t-mv.t0);}
+    else{const hit=rayPlane(x,y,mv.plane);if(!hit)return;d=hit.sub(mv.startHit);}
+    if(snapOn){const da=[d.x,d.y,d.z],ref=mv.origin.toArray();mv.comps.forEach(i=>{da[i]=Math.round((ref[i]+da[i])/snapSize)*snapSize-ref[i];});d.set(da[0],da[1],da[2]);}
+    rigApply(S,p=>[p[0]+d.x,p[1]+d.y,p[2]+d.z]);
+    $('coords').textContent='Move  X '+d.x.toFixed(2)+'  Y '+d.y.toFixed(2)+'  Z '+d.z.toFixed(2);
+  }
+  rebuild();syncBones();rigUI();requestRender();
+}
 function xBase(){
+  if(boneGz())return {orig:[],li:null,lorig:null,modal:false,pushed:false,gizmo:true,origin:new THREE.Vector3().fromArray(boneGzCenter()),bone:rigSnap(selB)};
   const lt=!selV.size&&selL>=0;
   return {orig:[...selV].map(i=>({i,p:verts[i].slice()})),li:lt?selL:null,lorig:lt?JSON.parse(JSON.stringify(lights[selL])):null,modal:false,pushed:false,gizmo:true,origin:new THREE.Vector3().fromArray(gizmoCenter())};
 }
@@ -1234,7 +1479,7 @@ function candidatePoint(x,y){
 
 /* ---------- selection ---------- */
 function applyClick(hit,shift){
-  if(!hit){if(!shift)selV=new Set();}
+  if(!hit){if(!shift){selV=new Set();selB=-1;}}
   else{
     const hv=hitVerts(hit);
     if(shift){const all=hv.every(i=>selV.has(i));hv.forEach(i=>all?selV.delete(i):selV.add(i));}
@@ -1271,6 +1516,7 @@ function beginMove(x,y,modal){
 }
 function updateMove(x,y){
   if(!mv)return;
+  if(mv.bone){updateBoneMove(x,y);return;}
   if(mv.kind==='rot'||mv.kind==='scl'){updateXform(x,y);return;}
   let d;
   if(mv.kind==='axis'){
@@ -1296,6 +1542,7 @@ function updateMove(x,y){
 }
 function endMove(commit){
   if(!mv)return;
+  if(!commit&&mv.bone){mv.bone.bs.forEach(a=>{bones[a[0]].p=a[1].slice();});mv.bone.vs.forEach(a=>{verts[a[0]]=a[1].slice();});}
   if(!commit){mv.orig.forEach(o=>{verts[o.i]=o.p.slice();});if(mv.lorig&&mv.li!=null)lights[mv.li]=mv.lorig;if(mv.pushed)undoStack.pop();}
   mv=null;$('coords').textContent='';changed();updateHint();
 }
@@ -1410,10 +1657,10 @@ rotGizmo.visible=sclGizmo.visible=false;scene.add(rotGizmo,sclGizmo);
   sclGizmo.add(cc,cp);sclPick.push(cp);
 }
 const gizVisible=()=>gizmo.visible||rotGizmo.visible||sclGizmo.visible;
-function gizmoCenter(){return selV.size?median():(selL>=0&&lights[selL]?lights[selL].pos.slice():[0,0,0]);}
+function gizmoCenter(){if(boneGz())return boneGzCenter();return selV.size?median():(selL>=0&&lights[selL]?lights[selL].pos.slice():[0,0,0]);}
 const _gd=new THREE.Vector3(),_gt=new THREE.Vector3();
 function updateGizmo(){
-  const has=selV.size>0||(selL>=0&&!!lights[selL]);
+  const has=selV.size>0||(selL>=0&&!!lights[selL])||(boneGz()&&tool!=='scale');
   const kind=tool==='rotate'?'r':tool==='scale'?'s':(tool==='select'||tool==='move'||tool==='vertex')?'m':'';
   const on=gizmoOn&&has&&!!kind;
   gizmo.visible=on&&kind==='m';rotGizmo.visible=on&&kind==='r';sclGizmo.visible=on&&kind==='s';
@@ -1441,7 +1688,7 @@ function axisParam(x,y,p,a){
   return (e-b*dd)/den;
 }
 function beginGizmoMove(h,x,y){
-  if(!selV.size&&selL<0)return null;
+  if(!selV.size&&selL<0&&!boneGz())return null;
   if(tool==='rotate')return beginRotate(h,x,y);
   if(tool==='scale')return beginScale(h,x,y);
   const base=xBase(),o=base.origin;
@@ -1598,7 +1845,7 @@ function syncUI(){
   document.querySelectorAll('[data-axis]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.axis===(axisLock||'')));
   vp.dataset.tool=tool;updateInfo();updateHint();
 }
-function changed(){if(selV.size&&selL>=0)selL=-1;rebuild();updateSelUI();syncLightIcons();updateLightUI();updateStats();updateOverlay();requestRender();saveSoon();}
+function changed(){if(selV.size&&selL>=0)selL=-1;if(selL>=0)selB=-1;syncVB();rebuild();updateSelUI();syncLightIcons();updateLightUI();syncBones();rigUI();updateStats();updateOverlay();requestRender();saveSoon();}
 function setTool(t){tool=t;pending=[];hover=null;syncUI();updatePlaneGrid();updateOverlay();requestRender();}
 function setMode(m){mode=m;syncUI();}
 
@@ -1629,6 +1876,10 @@ vp.addEventListener('pointerdown',e=>{
   if(gizVisible()){
     const gh=pickGizmo(p.x,p.y);
     if(gh){const m=beginGizmoMove(gh,p.x,p.y);if(m){mv=m;drag={kind:'gizmo'};vp.setPointerCapture(e.pointerId);return;}}
+  }
+  if(bones.length&&$('rigPanel').open&&(tool==='select'||tool==='move'||tool==='rotate'||tool==='scale')){const bh=pickBone(p.x,p.y);if(bh>=0){selectBone(bh);return;}}
+  if(poseOn&&selB>=0&&bones[selB]&&$('rigPanel').open&&(tool==='select'||tool==='move'||tool==='rotate'||tool==='scale')){
+    vp.setPointerCapture(e.pointerId);drag={kind:'bonelock',empty:pickElement(p.x,p.y)==null&&pickLight(p.x,p.y)<0};return;
   }
   if(tool==='select'||tool==='move'||tool==='rotate'||tool==='scale'){const lh=pickLight(p.x,p.y);if(lh>=0){selectLight(lh);return;}}
   vp.setPointerCapture(e.pointerId);
@@ -1670,6 +1921,7 @@ vp.addEventListener('pointermove',e=>{
 function endPointer(e){
   if(!drag)return;
   const p=local(e),d=drag;drag=null;boxEl.hidden=true;
+  if(d.kind==='bonelock'){if(d.empty){selB=-1;changed();}return;}
   if(d.kind==='move'||d.kind==='gizmo'){endMove(true);return;}
   if(d.kind==='box'){boxSelect(d.sx,d.sy,p.x,p.y,d.shift);return;}
   if(d.kind==='click'&&!d.moved){applyClick(d.hit,d.shift);return;}
@@ -1715,7 +1967,7 @@ $('snapSize').addEventListener('change',e=>{snapSize=parseFloat(e.target.value)|
 
 /* ---------- menus ---------- */
 const MENUS={
-  File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export'],['Import FBX...','importfbx'],['Export FBX...','exportfbx']],
+  File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export'],['Import FBX...','importfbx'],['Export FBX...','exportfbx'],['Import Blend...','importblend']],
   Edit:[['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Shift+Z'],null,['Copy','copy','Ctrl+C'],['Paste','paste','Ctrl+V'],['Duplicate','dup','Ctrl+D'],['Scale','scale'],null,['Delete','del','Del'],['Flip Normals','flip'],['Subdivide','subdiv'],['Merge at Center','merge']],
   Add:[['Triangle','add:tri'],['Quad','add:quad'],['Cube','add:cube'],['Pyramid','add:pyr'],['Octahedron','add:oct'],['Light','add:light']],
   Select:[['All','selall','A'],['None','selnone','Alt+A'],['Invert','selinv','Ctrl+I'],['Linked (Object)','linked','L']],
@@ -1725,7 +1977,7 @@ function run(a){
   if(a==='add:light')return addLight();
   if(a.indexOf('add:')===0)return addPrim(a.slice(4));
   if(a.indexOf('view:')===0)return setView(a.slice(5));
-  const f={new:newMesh,import:importOBJ,export:exportOBJ,importfbx:importFBX,exportfbx:exportFBX,undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
+  const f={new:newMesh,import:importOBJ,export:exportOBJ,importfbx:importFBX,importblend:importBlend,exportfbx:exportFBX,undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
   if(f)f();
 }
 let openWrap=null;
@@ -1750,7 +2002,7 @@ document.addEventListener('pointerdown',e=>{if(!e.target.closest('.menu'))closeM
 /* ---------- OBJ import and export ---------- */
 function toOBJ(){
   const o=['# Carpet, Z up'];
-  verts.forEach(v=>o.push('v '+v.map(n=>n.toFixed(5)).join(' ')));
+  verts.forEach(v=>o.push('v '+v.map(n=>n.toFixed(5)).join(' ')));rigLines().forEach(l=>o.push(l));
   tris.forEach(t=>o.push('f '+(t[0]+1)+' '+(t[1]+1)+' '+(t[2]+1)));
   return o.join('\n');
 }
@@ -1817,6 +2069,28 @@ const extOf=n=>(/\.([a-z0-9]+)$/i.exec(n)||[])[1]?.toLowerCase()||'';
 const baseName=n=>String(n).split(/[\\/]/).pop();
 const bytesURL=(bytes,mime)=>new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(new Blob([bytes],{type:mime}));});
 function urlBytes(url){const i=url.indexOf(','),bin=atob(url.slice(i+1)),u=new Uint8Array(bin.length);for(let k=0;k<bin.length;k++)u[k]=bin.charCodeAt(k);return u;}
+async function expandZips(fl){
+  const files=[],texs=[],clean=n=>String(n).replace(/\\/g,'/');
+  for(const f of fl){
+    if(extOf(f.name)!=='zip'){files.push(f);continue;}
+    const ents=(await readZip(await f.arrayBuffer())).filter(e=>{const p=clean(e.name).split('/').filter(Boolean);return p.length&&p[0]!=='__MACOSX'&&!p[p.length-1].startsWith('.');});
+    const inDir=(e,d)=>clean(e.name).split('/').filter(Boolean).slice(0,-1).some(x=>x.toLowerCase()===d);
+    const src=ents.filter(e=>inDir(e,'source')),tx=ents.filter(e=>inDir(e,'textures')&&MIMES[extOf(e.name)]);
+    const use=src.length?src:ents.filter(e=>!inDir(e,'textures'));
+    use.forEach(e=>files.push(new File([e.bytes],baseName(e.name))));
+    tx.forEach(e=>{texs.push(e);files.push(new File([e.bytes],baseName(e.name)));});
+  }
+  return {files,texs};
+}
+function matchTex(texs,names){
+  if(!texs||!texs.length)return null;
+  const nz=x=>String(x||'').toLowerCase().replace(/\.[a-z0-9]+$/,'').replace(/[^a-z0-9]/g,'');
+  const list=texs.map(e=>({e,k:nz(baseName(e.name))}));
+  const ns=names.map(nz).filter(Boolean);
+  for(const n of ns){const h=list.find(t=>t.k===n);if(h)return h.e;}
+  for(const n of ns){const h=list.find(t=>t.k&&(t.k.includes(n)||n.includes(t.k)));if(h)return h.e;}
+  return texs.length===1?texs[0]:null;
+}
 function hasTexFaces(){return tris.some(t=>{const x=parseTex(t[3]);return x&&images[x.img];});}
 function downloadBlob(blob,name){
   const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -1842,7 +2116,7 @@ function exportPackage(){
     groups.get(m).push(ui?'f '+[0,1,2].map(k=>(t[k]+1)+'/'+ui[k]).join(' '):'f '+(t[0]+1)+' '+(t[1]+1)+' '+(t[2]+1));
   });
   const o=['# Carpet, Z up','mtllib model.mtl'];
-  verts.forEach(v=>o.push('v '+v.map(n=>n.toFixed(5)).join(' ')));
+  verts.forEach(v=>o.push('v '+v.map(n=>n.toFixed(5)).join(' ')));rigLines().forEach(l=>o.push(l));
   vt.forEach(l=>o.push(l));
   if(groups.has(null))groups.get(null).forEach(l=>o.push(l));
   const mtl=['# Carpet materials'];
@@ -1859,13 +2133,14 @@ function exportPackage(){
   downloadBlob(makeZip(files),'model.zip');flash('Saved model.zip (obj, mtl and textures)');
 }
 function parseOBJFull(text){
-  const V=[],UV=[],T=[];let mat=null;
+  const V=[],UV=[],T=[];let mat=null,ob=null;
   text.split(/\r?\n/).forEach(raw=>{
     const line=raw.trim();if(!line||line[0]==='#')return;
     const p=line.split(/\s+/);
     if(p[0]==='v'&&p.length>=4){const a=[+p[1],+p[2],+p[3]];if(a.every(Number.isFinite))V.push(a);}
     else if(p[0]==='vt'&&p.length>=3){UV.push([+p[1],+p[2]]);}
     else if(p[0]==='usemtl'){mat=p.slice(1).join(' ');}
+    else if((p[0]==='o'||p[0]==='g')&&p.length>=2){ob=p.slice(1).join(' ');}
     else if(p[0]==='f'&&p.length>=4){
       const idx=[],uvs=[];
       p.slice(1).forEach(sv=>{
@@ -1875,7 +2150,7 @@ function parseOBJFull(text){
       });
       for(let k=1;k<idx.length-1;k++){
         const tu=[uvs[0],uvs[k],uvs[k+1]];
-        T.push({i:[idx[0],idx[k],idx[k+1]],uv:tu.every(Boolean)?tu:null,mat});
+        T.push({i:[idx[0],idx[k],idx[k+1]],uv:tu.every(Boolean)?tu:null,mat,ob});
       }
     }
   });
@@ -1900,15 +2175,11 @@ function importOBJ(){
   inp.addEventListener('change',async()=>{
     const fl=[...inp.files];if(!fl.length)return;
     try{
-      const ents=[],dec=new TextDecoder();
-      for(const f of fl){
-        const buf=await f.arrayBuffer();
-        if(extOf(f.name)==='zip')(await readZip(buf)).forEach(x=>ents.push(x));
-        else ents.push({name:f.name,bytes:new Uint8Array(buf)});
-      }
+      const ents=[],dec=new TextDecoder(),zx=await expandZips(fl),texs=zx.texs;
+      for(const f of zx.files)ents.push({name:f.name,bytes:new Uint8Array(await f.arrayBuffer())});
       const objE=ents.find(x=>extOf(x.name)==='obj');
-      if(!objE){flash('No .obj file found');return;}
-      const o=parseOBJFull(dec.decode(objE.bytes));
+      if(!objE){flash(ents.some(x=>extOf(x.name)==='fbx')?'That zip holds an .fbx: use Import FBX':ents.some(x=>extOf(x.name)==='blend')?'That zip holds a .blend: use Import Blend':'No .obj file found');return;}
+      const o=parseOBJFull(dec.decode(objE.bytes)),rigR=parseRig(dec.decode(objE.bytes));
       if(!o.v.length){flash('No vertices found in that file');return;}
       const mats={};ents.filter(x=>extOf(x.name)==='mtl').forEach(x=>Object.assign(mats,parseMTL(dec.decode(x.bytes))));
       const picE={};ents.forEach(x=>{if(MIMES[extOf(x.name)])picE[baseName(x.name).toLowerCase()]=x;});
@@ -1920,17 +2191,334 @@ function importOBJ(){
         if(!(bn in idxOf))idxOf[bn]=addImage(baseName(en.name),await bytesURL(en.bytes,MIMES[extOf(en.name)]));
         m.ii=idxOf[bn];
       }
+      const fbT={};
+      if(texs.length)for(const t of o.t){
+        const key=(t.ob||'')+'\0'+(t.mat||'');if(key in fbT)continue;
+        const e=matchTex(texs,[t.ob,t.mat]);fbT[key]=-1;if(!e)continue;
+        const bn=baseName(e.name).toLowerCase();
+        if(!(bn in idxOf))idxOf[bn]=addImage(baseName(e.name),await bytesURL(e.bytes,MIMES[extOf(e.name)]));
+        fbT[key]=idxOf[bn];
+      }
       const T=o.t.map(t=>{
         const m=t.mat&&mats[t.mat];let k=null;
-        if(m&&m.ii>=0&&t.uv){
+        const ii=(m&&m.ii>=0)?m.ii:(fbT[(t.ob||'')+'\0'+(t.mat||'')]??-1);
+        if(ii>=0&&t.uv){
           const du=Math.floor(Math.min(t.uv[0][0],t.uv[1][0],t.uv[2][0])+1e-6),dv=Math.floor(Math.min(t.uv[0][1],t.uv[1][1],t.uv[2][1])+1e-6);
-          k=makeTex(m.ii,[t.uv[0][0]-du,t.uv[0][1]-dv,t.uv[1][0]-du,t.uv[1][1]-dv,t.uv[2][0]-du,t.uv[2][1]-dv]);
+          k=makeTex(ii,[t.uv[0][0]-du,t.uv[0][1]-dv,t.uv[1][0]-du,t.uv[1][1]-dv,t.uv[2][0]-du,t.uv[2][1]-dv]);
         }else if(m&&m.kd)k=m.kd;
         return [t.i[0],t.i[1],t.i[2],k];
       });
-      pushUndo();verts=o.v;tris=T;selV=new Set();pending=[];changed();frame();
+      pushUndo();verts=o.v;tris=T;setRig(rigR);selV=new Set();pending=[];changed();frame();
       flash('Imported '+objE.name+': '+verts.length+' vertices, '+tris.length+' triangles'+(Object.keys(idxOf).length?', '+Object.keys(idxOf).length+' texture(s)':''));
     }catch(err){flash('Could not read that file');}
+  });
+  inp.click();
+}
+/* ---------- Blend import (.blend, plain or gzip; meshes, UVs, materials, armature rig) ---------- */
+async function parseBlend(buf){
+  let u8=new Uint8Array(buf);
+  if(u8[0]===0x1f&&u8[1]===0x8b)u8=new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+  else if(u8[0]===0x28&&u8[1]===0xb5&&u8[2]===0x2f&&u8[3]===0xfd)throw new Error('zstd');
+  if(String.fromCharCode(...u8.subarray(0,7))!=='BLENDER')throw new Error('Not a .blend file');
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  let p=12,ps,le,big=false;
+  if(u8[7]>=0x30&&u8[7]<=0x39){
+    p=parseInt(String.fromCharCode(u8[7],u8[8]),10);ps=u8[9]===0x2d?8:4;
+    big=parseInt(String.fromCharCode(u8[10],u8[11]),10)>=1;le=u8[12]===0x76;
+  }else{ps=u8[7]===0x2d?8:4;le=u8[8]===0x76;}
+  const rI=o=>dv.getInt32(o,le),rS=o=>dv.getInt16(o,le),rF=o=>dv.getFloat32(o,le);
+  const rP=o=>{
+    if(ps===4)return dv.getUint32(o,le);
+    const a=dv.getUint32(o,le),b=dv.getUint32(o+4,le);
+    return le?b*4294967296+a:a*4294967296+b;
+  };
+  const rStr=(o,max)=>{let e=o;const lim=o+max;while(e<lim&&u8[e]!==0)e++;return new TextDecoder().decode(u8.subarray(o,e));};
+  const blocks=[];let dna=-1;
+  while(p+16<=u8.length){
+    const code=String.fromCharCode(u8[p],u8[p+1],u8[p+2],u8[p+3]).replace(/\0/g,'');
+    let len,old,sd,nr,hl;
+    if(big){sd=rI(p+4);old=rP(p+8);len=Number(dv.getBigInt64(p+16,le));nr=Number(dv.getBigInt64(p+24,le));hl=32;}
+    else if(ps===8){len=rI(p+4);old=rP(p+8);sd=rI(p+16);nr=rI(p+20);hl=24;}
+    else{len=rI(p+4);old=rP(p+8);sd=rI(p+12);nr=rI(p+16);hl=20;}
+    if(code==='ENDB')break;
+    const off=p+hl;
+    if(code==='DNA1')dna=off;else blocks.push({code,len,old,sd,nr,off});
+    p=off+len;
+    if(len<0)break;
+  }
+  if(dna<0)throw new Error('No DNA block');
+  /* SDNA */
+  let q=dna+8;
+  const al=()=>{q=dna+(((q-dna)+3)&~3);};
+  const cstr=()=>{let e=q;while(u8[e]!==0)e++;const s=new TextDecoder().decode(u8.subarray(q,e));q=e+1;return s;};
+  const nn=rI(q);q+=4;const names=[];for(let i=0;i<nn;i++)names.push(cstr());al();
+  q+=4;const nt=rI(q);q+=4;const types=[];for(let i=0;i<nt;i++)types.push(cstr());al();
+  q+=4;const tlen=[];for(let i=0;i<nt;i++){tlen.push(rS(q));q+=2;}al();
+  q+=4;const ns=rI(q);q+=4;
+  const ST={},sn=[];
+  for(let i=0;i<ns;i++){
+    const ti=rS(q),nf=rS(q+2);q+=4;
+    const st={size:tlen[ti],f:{}};let o=0;
+    for(let k=0;k<nf;k++){
+      const t=rS(q),n=rS(q+2);q+=4;
+      const raw=names[n],isP=raw[0]==='*'||raw.startsWith('(*');
+      const nm=raw.replace(/^\(?\*+/,'').replace(/\).*$/,'').replace(/\[.*$/,'');
+      let arr=1;(raw.match(/\[(\d+)\]/g)||[]).forEach(d=>{arr*=parseInt(d.slice(1),10);});
+      st.f[nm]={off:o,type:types[t],ptr:isP,n:arr};
+      o+=(isP?ps:tlen[t])*arr;
+    }
+    ST[types[ti]]=st;sn.push(types[ti]);
+  }
+  const byOld=new Map(),sorted=[];
+  blocks.forEach(b=>{if(b.old){byOld.set(b.old,b);sorted.push(b);}});
+  sorted.sort((a,b)=>a.old-b.old);
+  const blk=ptr=>{
+    if(!ptr)return null;
+    const b=byOld.get(ptr);if(b)return b;
+    let lo=0,hi=sorted.length-1,r=null;
+    while(lo<=hi){const m=(lo+hi)>>1;if(sorted[m].old<=ptr){r=sorted[m];lo=m+1;}else hi=m-1;}
+    return r&&ptr<r.old+r.len?r:null;
+  };
+  const at=ptr=>{const b=blk(ptr);return b?b.off+(ptr-b.old):-1;};
+  return {u8,dv,ps,le,rI,rS,rF,rP,rStr,blocks,ST,sn,blk,at};
+}
+async function blendExtract(B,cand){
+  const {rI,rS,rF,rP,rStr,blocks,ST,sn,blk,at,dv,le,ps}=B;
+  const of=(s,n)=>{const x=ST[s]&&ST[s].f[n];return x?x.off:-1;};
+  const has=(s,n)=>of(s,n)>=0;
+  const P=(b,s,n)=>{const o=of(s,n);return o<0?0:rP(b+o);};
+  const I=(b,s,n,d)=>{const o=of(s,n);return o<0?(d||0):rI(b+o);};
+  const Sh=(b,s,n,d)=>{const o=of(s,n);return o<0?(d||0):rS(b+o);};
+  const FA=(b,s,n,c)=>{const o=of(s,n),r=[];for(let i=0;i<c;i++)r.push(o<0?0:rF(b+o+i*4));return r;};
+  const firstName=(s,ns)=>ns.find(n=>has(s,n))||null;
+  const cnt=(mo,ns)=>{const n=firstName('Mesh',ns);return n?rI(mo+of('Mesh',n)):0;};
+  const idName=b=>rStr(b+of('ID','name'),66).slice(2);
+  const items=(lb,item)=>{
+    const out=[];let ptr=rP(lb),g=0;
+    while(ptr&&g++<200000){const o=at(ptr);if(o<0)break;out.push(o);ptr=rP(o+of(item,'next'));}
+    return out;
+  };
+  const ofType=name=>blocks.filter(b=>sn[b.sd]===name);
+  /* object transforms */
+  const wc={};
+  const world=(o,d)=>{
+    if(wc[o])return wc[o];
+    const loc=FA(o,'Object','loc',3),rot=FA(o,'Object','rot',3),sz=FA(o,'Object','size',3),qt=FA(o,'Object','quat',4);
+    const rm=Sh(o,'Object','rotmode');
+    const q=new THREE.Quaternion();
+    if(rm>0){const od=['XYZ','XZY','YXZ','YZX','ZXY','ZYX'][rm-1]||'XYZ';q.setFromEuler(new THREE.Euler(rot[0],rot[1],rot[2],od.split('').reverse().join('')));}
+    else if(rm===0){q.set(qt[1],qt[2],qt[3],qt[0]);if(q.lengthSq()>0)q.normalize();else q.set(0,0,0,1);}
+    else{const ax=FA(o,'Object','rotAxis',3),an=has('Object','rotAngle')?rF(o+of('Object','rotAngle')):0,v=new THREE.Vector3(ax[0],ax[1],ax[2]);if(v.lengthSq()>0)q.setFromAxisAngle(v.normalize(),an);}
+    let m=new THREE.Matrix4().compose(new THREE.Vector3(loc[0],loc[1],loc[2]),q,new THREE.Vector3(sz[0]||1,sz[1]||1,sz[2]||1));
+    const par=P(o,'Object','parent'),po=par?at(par):-1;
+    if(po>=0&&(d||0)<32){
+      const pi=new THREE.Matrix4().fromArray(FA(o,'Object','parentinv',16));
+      m=world(po,(d||0)+1).clone().multiply(pi).multiply(m);
+    }
+    return wc[o]=m;
+  };
+  const objs=ofType('Object').map(b=>b.off);
+  /* armatures */
+  const bones=[],boneIdx={};
+  objs.forEach(o=>{
+    if(Sh(o,'Object','type')!==25)return;
+    const ao=at(P(o,'Object','data'));if(ao<0)return;
+    const W=world(o);
+    const walk=(lb,par,pp)=>{
+      let ptr=rP(lb),g=0;
+      while(ptr&&g++<100000){
+        const bo=at(ptr);if(bo<0)break;
+        const nm=rStr(bo+of('Bone','name'),64);
+        let h=has('Bone','arm_head')?FA(bo,'Bone','arm_head',3):null;
+        if(!h||(!h[0]&&!h[1]&&!h[2]&&(par>=0||FA(bo,'Bone','head',3).some(x=>x)))){
+          const lh=FA(bo,'Bone','head',3);h=[lh[0]+pp[0],lh[1]+pp[1],lh[2]+pp[2]];
+        }
+        const v=new THREE.Vector3(h[0],h[1],h[2]).applyMatrix4(W),idx=bones.length;
+        bones.push({n:nm||'Bone',p:[v.x,v.y,v.z],par});
+        if(!(nm in boneIdx))boneIdx[nm]=idx;
+        walk(bo+of('Bone','childbase'),idx,h);
+        ptr=rP(bo+of('Bone','next'));
+      }
+    };
+    walk(ao+of('bArmature','bonebase'),-1,[0,0,0]);
+  });
+  /* materials */
+  const matCache={},imgCache={};
+  const matInfo=mp=>{
+    if(mp in matCache)return matCache[mp];
+    const o=at(mp);let r={name:'',kd:null,img:null};
+    if(o>=0){
+      r.name=idName(o);
+      if(has('Material','r')){
+        const c=[rF(o+of('Material','r')),rF(o+of('Material','g')),rF(o+of('Material','b'))];
+        if(c.every(Number.isFinite))r.kd='#'+c.map(x=>Math.round(Math.min(1,Math.max(0,x))*255).toString(16).padStart(2,'0')).join('');
+      }
+      const nt=P(o,'Material','nodetree'),no=nt?at(nt):-1;
+      if(no>=0&&has('bTree','nodes')||no>=0&&has('bNodeTree','nodes')){
+        const tn=has('bNodeTree','nodes')?'bNodeTree':'bTree';
+        for(const n of items(no+of(tn,'nodes'),'bNode')){
+          const ip=P(n,'bNode','id'),b=ip?blk(ip):null;
+          if(b&&sn[b.sd]==='Image'){
+            const io=at(ip);
+            r.img={name:idName(io),path:has('Image','filepath')?rStr(io+of('Image','filepath'),1024):''};
+            break;
+          }
+        }
+      }
+    }
+    return matCache[mp]=r;
+  };
+  const imgIndex=async e=>{
+    const bn=baseName(e.name).toLowerCase();
+    if(!(bn in imgCache))imgCache[bn]=addImage(baseName(e.name),await bytesURL(e.bytes,MIMES[extOf(e.name)]));
+    return imgCache[bn];
+  };
+  const findImg=im=>{
+    if(!im)return null;
+    const bns=[baseName(im.path||''),baseName(im.name||'')].map(x=>x.toLowerCase()).filter(Boolean);
+    for(const bn of bns){const e=cand.find(c=>baseName(c.name).toLowerCase()===bn);if(e)return e;}
+    return null;
+  };
+  /* meshes */
+  const V=[],T=[];
+  for(const o of objs){
+    if(Sh(o,'Object','type')!==1)continue;
+    const mo=at(P(o,'Object','data'));if(mo<0)continue;
+    const nV=cnt(mo,['verts_num','totvert']),nP=cnt(mo,['faces_num','totpoly']),nL=cnt(mo,['corners_num','totloop']);
+    const layersOf=ns=>{
+      const cn=firstName('Mesh',ns);if(!cn)return [];
+      const cb=mo+of('Mesh',cn),lo=at(P(cb,'CustomData','layers')),tot=I(cb,'CustomData','totlayer'),sz=ST.CustomDataLayer.size,out=[];
+      if(lo<0)return out;
+      for(let i=0;i<tot;i++){
+        const b=lo+i*sz;
+        out.push({type:I(b,'CustomDataLayer','type'),name:rStr(b+of('CustomDataLayer','name'),68),dp:P(b,'CustomDataLayer','data')});
+      }
+      return out;
+    };
+    const vL=layersOf(['vert_data','vdata']),lL=layersOf(['corner_data','ldata']),fL=layersOf(['face_data','pdata']);
+    const dataOf=(L,test)=>{const l=L.find(test);if(!l||!l.dp)return null;const b=blk(l.dp);return b?{o:at(l.dp),len:b.len}:null;};
+    /* positions */
+    let pos=null;
+    const mv=P(mo,'Mesh','mvert');
+    if(mv&&at(mv)>=0){const b=at(mv),sz=ST.MVert?ST.MVert.size:20;pos=i=>[rF(b+i*sz),rF(b+i*sz+4),rF(b+i*sz+8)];}
+    else{const d=dataOf(vL,l=>l.name==='position');if(d)pos=i=>[rF(d.o+i*12),rF(d.o+i*12+4),rF(d.o+i*12+8)];}
+    if(!pos||!nV)continue;
+    /* faces */
+    const polys=[];let loopV=null;
+    const mp=P(mo,'Mesh','mpoly'),ml=P(mo,'Mesh','mloop');
+    if(mp&&ml&&at(mp)>=0&&at(ml)>=0){
+      const pb=at(mp),psz=ST.MPoly.size,lb=at(ml),lsz=ST.MLoop.size,ls=of('MPoly','loopstart'),lt=of('MPoly','totloop'),mn=of('MPoly','mat_nr');
+      for(let i=0;i<nP;i++)polys.push({s:rI(pb+i*psz+ls),n:rI(pb+i*psz+lt),m:mn>=0?rS(pb+i*psz+mn):0});
+      loopV=k=>rI(lb+k*lsz+(of('MLoop','v')||0));
+    }else{
+      const fn=firstName('Mesh',['face_offset_indices','poly_offset_indices']),op=fn?P(mo,'Mesh',fn):0,oo=op?at(op):-1;
+      const cv=dataOf(lL,l=>l.name==='.corner_vert');
+      if(cv)loopV=k=>rI(cv.o+k*4);
+      if(oo>=0){for(let i=0;i<nP;i++)polys.push({s:rI(oo+i*4),n:rI(oo+(i+1)*4)-rI(oo+i*4),m:0});}
+      else if(nL%3===0){for(let i=0;i<nL/3;i++)polys.push({s:i*3,n:3,m:0});}
+      const mi=dataOf(fL,l=>l.name==='material_index');
+      if(mi)polys.forEach((pl,i)=>{pl.m=rI(mi.o+i*4);});
+    }
+    if(!loopV||!polys.length)continue;
+    /* UVs */
+    let uvAt=null;
+    {
+      const l=lL.find(x=>x.type===16)||lL.find(x=>x.type===49&&!x.name.startsWith('.'));
+      if(l&&l.dp&&blk(l.dp)){const d=at(l.dp),st=Math.max(8,Math.floor(blk(l.dp).len/Math.max(1,nL)));uvAt=k=>[rF(d+k*st),rF(d+k*st+4)];}
+    }
+    /* vertex groups -> bones */
+    let vbOf=null;
+    if(bones.length){
+      const gnames=[];
+      const gl=has('Mesh','vertex_group_names')?mo+of('Mesh','vertex_group_names'):(has('Object','defbase')?o+of('Object','defbase'):-1);
+      if(gl>=0)items(gl,'bDeformGroup').forEach(g=>gnames.push(rStr(g+of('bDeformGroup','name'),64)));
+      let dvb=-1;
+      const dp=P(mo,'Mesh','dvert');
+      if(dp&&at(dp)>=0)dvb=at(dp);else{const d=dataOf(vL,l=>l.type===2);if(d)dvb=d.o;}
+      if(dvb>=0&&gnames.length&&ST.MDeformVert){
+        const dsz=ST.MDeformVert.size,wsz=ST.MDeformWeight?ST.MDeformWeight.size:8;
+        vbOf=i=>{
+          const b=dvb+i*dsz,wp=P(b,'MDeformVert','dw'),tw=I(b,'MDeformVert','totweight'),wo=wp?at(wp):-1;
+          let best=-1,bw=0;
+          if(wo<0||tw<=0||tw>1024)return -1;
+          for(let k=0;k<tw;k++){
+            const di=rI(wo+k*wsz+of('MDeformWeight','def_nr')),w=rF(wo+k*wsz+of('MDeformWeight','weight')),bi=boneIdx[gnames[di]];
+            if(bi!==undefined&&w>bw){bw=w;best=bi;}
+          }
+          return best;
+        };
+      }
+    }
+    /* materials */
+    let mats=[];
+    {
+      let ma=P(mo,'Mesh','mat'),tc=Sh(mo,'Mesh','totcol');
+      if(!ma||tc<=0){ma=P(o,'Object','mat');tc=Sh(o,'Object','totcol');}
+      const mb=ma?at(ma):-1;
+      if(mb>=0)for(let k=0;k<tc&&k<256;k++){const mp2=rP(mb+k*ps);if(mp2)mats.push(matInfo(mp2));else mats.push(null);}
+    }
+    const obName=idName(o),meName=idName(mo),fbCache={};
+    const imgFor=async mi=>{
+      const m=mats[mi]||null,key=m?m.name:'';
+      if(key in fbCache)return fbCache[key];
+      let e=m&&findImg(m.img);
+      if(!e&&cand.length)e=matchTex(cand,[obName,meName,m&&m.name].filter(Boolean));
+      return fbCache[key]=e?await imgIndex(e):-1;
+    };
+    /* emit */
+    const W=world(o),flip=W.determinant()<0,base=V.length;
+    for(let i=0;i<nV;i++){const a=pos(i),v=new THREE.Vector3(a[0],a[1],a[2]).applyMatrix4(W);V.push([v.x,v.y,v.z]);}
+    if(vbOf){if(!T.vb)T.vb=[];}
+    const vbArr=T.vbAll||(T.vbAll=[]);
+    for(let i=0;i<nV;i++)vbArr[base+i]=vbOf?vbOf(i):-1;
+    for(const pl of polys){
+      if(pl.n<3||pl.s<0||pl.s+pl.n>nL)continue;
+      const mi=Math.max(0,Math.min(pl.m,Math.max(0,mats.length-1))),m=mats[mi]||null,ii=await imgFor(mi);
+      for(let k=1;k<pl.n-1;k++){
+        const ks=[pl.s,pl.s+k,pl.s+k+1],ids=ks.map(x=>loopV(x));
+        if(ids.some(x=>!(x>=0&&x<nV)))continue;
+        let col=null;
+        if(ii>=0&&uvAt){
+          const uv=ks.map(uvAt);
+          if(uv.every(u=>Number.isFinite(u[0])&&Number.isFinite(u[1]))){
+            const du=Math.floor(Math.min(uv[0][0],uv[1][0],uv[2][0])+1e-6),dv2=Math.floor(Math.min(uv[0][1],uv[1][1],uv[2][1])+1e-6);
+            col=makeTex(ii,[uv[0][0]-du,uv[0][1]-dv2,uv[1][0]-du,uv[1][1]-dv2,uv[2][0]-du,uv[2][1]-dv2]);
+            if(flip)col=makeTex(ii,[uv[0][0]-du,uv[0][1]-dv2,uv[2][0]-du,uv[2][1]-dv2,uv[1][0]-du,uv[1][1]-dv2]);
+          }
+        }
+        if(!col&&m&&m.kd)col=m.kd;
+        const a=ids[0]+base,b=ids[1]+base,c=ids[2]+base;
+        T.push(flip?[a,c,b,col]:[a,b,c,col]);
+      }
+    }
+  }
+  const vb=T.vbAll||new Array(V.length).fill(-1);
+  for(let i=0;i<V.length;i++)if(vb[i]===undefined)vb[i]=-1;
+  return {V,T:T.slice(),bones,vb};
+}
+function importBlend(){
+  const inp=document.createElement('input');inp.type='file';inp.multiple=true;
+  inp.accept='.blend,.zip,.png,.jpg,.jpeg,.gif,.webp,.bmp';
+  inp.addEventListener('change',async()=>{
+    const fl=[...inp.files];if(!fl.length)return;
+    try{
+      const zx=await expandZips(fl),bf=zx.files.find(f=>extOf(f.name)==='blend');
+      if(!bf){flash(zx.files.some(f=>extOf(f.name)==='obj')?'That zip holds an .obj: use Import OBJ':zx.files.some(f=>extOf(f.name)==='fbx')?'That zip holds an .fbx: use Import FBX':'No .blend file found');return;}
+      let B;
+      try{B=await parseBlend(await bf.arrayBuffer());}
+      catch(e){flash(e&&e.message==='zstd'?'Compressed (zstd) .blend: save it uncompressed in Blender':'Could not read that .blend file');return;}
+      const cand=[];
+      for(const f of zx.files)if(MIMES[extOf(f.name)])cand.push({name:f.name,bytes:new Uint8Array(await f.arrayBuffer())});
+      const r=await blendExtract(B,cand);
+      if(!r.V.length||!r.T.length){flash('No mesh found in that .blend');return;}
+      let fScale=1;
+      {const mn=[1e30,1e30,1e30],mx=[-1e30,-1e30,-1e30];
+       r.V.forEach(v=>{for(let k=0;k<3;k++){if(v[k]<mn[k])mn[k]=v[k];if(v[k]>mx[k])mx[k]=v[k];}});
+       const ext=Math.max(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]);
+       if(ext>10){fScale=10/ext;r.V.forEach(v=>{v[0]*=fScale;v[1]*=fScale;v[2]*=fScale;});r.bones.forEach(b=>{b.p=b.p.map(x=>x*fScale);});}}
+      pushUndo();verts=r.V;tris=r.T;setRig({b:r.bones,vb:r.vb});selV=new Set();pending=[];changed();frame();
+      flash('Imported '+bf.name+': '+verts.length+' vertices, '+tris.length+' triangles'+(r.bones.length?', '+r.bones.length+' bones':''));
+    }catch(err){flash('Could not read that .blend file');}
   });
   inp.click();
 }
@@ -2040,10 +2628,11 @@ function fbxSniff(b){
 }
 function importFBX(){
   const inp=document.createElement('input');inp.type='file';inp.multiple=true;
-  inp.accept='.fbx';
+  inp.accept='.fbx,.zip';
   inp.addEventListener('change',async()=>{
-    const fl=[...inp.files];if(!fl.length)return;
+    let fl=[...inp.files];if(!fl.length)return;
     try{
+      const zx=await expandZips(fl),texs=zx.texs;fl=zx.files;
       const ff=fl.find(f=>extOf(f.name)==='fbx');
       if(!ff){flash('No .fbx file found');return;}
       const buf=await ff.arrayBuffer(),head=new TextDecoder().decode(new Uint8Array(buf,0,20));
@@ -2096,13 +2685,18 @@ function importFBX(){
         if(!bytes||!mime)return -1;
         return addImage(name,await bytesURL(bytes,mime));
       };
-      const V=[],T=[];
+      const texIdxF={},texFor=async names=>{
+        const e=matchTex(texs,names);if(!e)return -1;const bn=baseName(e.name).toLowerCase();
+        if(!(bn in texIdxF))texIdxF[bn]=addImage(baseName(e.name),await bytesURL(e.bytes,MIMES[extOf(e.name)]));
+        return texIdxF[bn];
+      };
+      const V=[],T=[],geoBase={};let fScale=1;
       for(const id in byId){
         const model=byId[id];if(model.name!=='Model')continue;
         const gc=kidsOf(+id,'Geometry')[0];if(!gc)continue;
         const geo=byId[gc.a],vs=(fbxKid(geo,'Vertices')||{props:[[]]}).props[0],pi=(fbxKid(geo,'PolygonVertexIndex')||{props:[[]]}).props[0];
         if(!vs.length||!pi.length)continue;
-        const W=G.clone().multiply(world(+id)),base=V.length;
+        const W=G.clone().multiply(world(+id)),base=V.length;geoBase[gc.a]=base;
         for(let i=0;i+2<vs.length;i+=3){const v=new THREE.Vector3(vs[i],vs[i+1],vs[i+2]).applyMatrix4(W);V.push([v.x,v.y,v.z]);}
         const mats=[];
         for(const mc of kidsOf(+id,'Material')){
@@ -2113,6 +2707,12 @@ function importFBX(){
             matCache[mc.a]={kd,ii};
           }
           mats.push(matCache[mc.a]);
+        }
+        let fbI=-1;
+        if(texs.length){
+          const cn=x=>String(x&&x.props[1]||'').replace(/^(Model|Material)::/,'').split('\x00')[0];
+          const mn=kidsOf(+id,'Material').map(c=>cn(byId[c.a]));
+          fbI=await texFor([cn(model)].concat(mn));
         }
         const uvL=fbxKid(geo,'LayerElementUV'),uvD=uvL&&fbxKid(uvL,'UV'),uvI=uvL&&fbxKid(uvL,'UVIndex');
         const uvMap=uvL&&fbxKid(uvL,'MappingInformationType'),uvRef=uvL&&fbxKid(uvL,'ReferenceInformationType');
@@ -2132,12 +2732,12 @@ function importFBX(){
             };
             for(let k=1;k<n-1;k++){
               const ids=[poly[0],poly[k],poly[k+1]];let col=null;
-              if(m){
-                const uv=[uvOf(0),uvOf(k),uvOf(k+1)];
-                if(m.ii>=0&&uv.every(Boolean)){
+              if(m||fbI>=0){
+                const uv=[uvOf(0),uvOf(k),uvOf(k+1)],ii=(m&&m.ii>=0)?m.ii:fbI;
+                if(ii>=0&&uv.every(Boolean)){
                   const du=Math.floor(Math.min(uv[0][0],uv[1][0],uv[2][0])+1e-6),dv2=Math.floor(Math.min(uv[0][1],uv[1][1],uv[2][1])+1e-6);
-                  col=makeTex(m.ii,[uv[0][0]-du,uv[0][1]-dv2,uv[1][0]-du,uv[1][1]-dv2,uv[2][0]-du,uv[2][1]-dv2]);
-                }else if(m.kd)col=m.kd;
+                  col=makeTex(ii,[uv[0][0]-du,uv[0][1]-dv2,uv[1][0]-du,uv[1][1]-dv2,uv[2][0]-du,uv[2][1]-dv2]);
+                }else if(m&&m.kd)col=m.kd;
               }
               T.push([ids[0]+base,ids[1]+base,ids[2]+base,col]);
             }
@@ -2154,8 +2754,29 @@ function importFBX(){
       {const mn=[1e30,1e30,1e30],mx=[-1e30,-1e30,-1e30];
        V.forEach(v=>{for(let k=0;k<3;k++){if(v[k]<mn[k])mn[k]=v[k];if(v[k]>mx[k])mx[k]=v[k];}});
        const ext=Math.max(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]);
-       if(ext>10){const f=10/ext;V.forEach(v=>{v[0]*=f;v[1]*=f;v[2]*=f;});}}
-      pushUndo();verts=V;tris=tris2;selV=new Set();pending=[];changed();frame();
+       if(ext>10){const f=10/ext;fScale=f;V.forEach(v=>{v[0]*=f;v[1]*=f;v[2]*=f;});}}
+      const rigR={b:[],vb:new Array(V.length).fill(-1)},bId={};
+      {
+        const cls=Object.keys(byId).filter(k=>byId[k].name==='Deformer'&&byId[k].props[2]==='Cluster');
+        const linkOf=k=>conns.find(c=>c.b===+k&&byId[c.a]&&byId[c.a].name==='Model');
+        const bIds=Object.keys(byId).filter(k=>byId[k].name==='Model'&&byId[k].props[2]==='LimbNode').map(Number);
+        cls.forEach(k=>{const l=linkOf(k);if(l&&bIds.indexOf(l.a)<0)bIds.push(l.a);});
+        bIds.forEach(id=>{
+          const v=new THREE.Vector3().applyMatrix4(G.clone().multiply(world(id)));
+          bId[id]=rigR.b.length;
+          rigR.b.push({n:String(byId[id].props[1]||'Bone').replace(/^Model::/,'').split('\x00')[0]||'Bone',p:[v.x*fScale,v.y*fScale,v.z*fScale],par:-1});
+        });
+        bIds.forEach(id=>{const p=parentOf[id];if(p!==undefined&&p in bId&&p!==id)rigR.b[bId[id]].par=bId[p];});
+        const bw=new Array(V.length).fill(0);
+        cls.forEach(k=>{
+          const l=linkOf(k);if(!l||!(l.a in bId))return;
+          const sk=conns.find(c=>c.a===+k&&byId[c.b]&&byId[c.b].name==='Deformer'),gk=sk&&conns.find(c=>c.a===sk.b&&byId[c.b]&&byId[c.b].name==='Geometry'),base=gk?geoBase[gk.b]:undefined;
+          if(base===undefined)return;
+          const cl=byId[k],ix=(fbxKid(cl,'Indexes')||{props:[[]]}).props[0],wt=(fbxKid(cl,'Weights')||{props:[[]]}).props[0];
+          ix.forEach((vi,j)=>{const g=base+vi;if(g<V.length&&wt[j]>bw[g]){bw[g]=wt[j];rigR.vb[g]=bId[l.a];}});
+        });
+      }
+      pushUndo();verts=V;tris=tris2;setRig(rigR);selV=new Set();pending=[];changed();frame();
       flash('Imported '+ff.name+': '+verts.length+' vertices, '+tris.length+' triangles');
     }catch(err){flash('Could not read that FBX file');}
   });
@@ -2217,6 +2838,23 @@ function exportFBX(){
     N('Model',[L(modId),S(nm('Carpet','Model')),S('Mesh')],[N('Version',[I(232)]),N('Properties70',[],[pInt('DefaultAttributeIndex',0)]),N('Shading',[B(true)]),N('Culling',[S('CullingOff')])])
   ];
   const conn=[N('C',[S('OO'),L(modId),L(0)]),N('C',[S('OO'),L(geoId),L(modId)])];
+  if(bones.length){
+    const skinId=nid++,bIds=bones.map(()=>nid++),cIds=bones.map(()=>nid++),aIds=bones.map(()=>nid++);
+    syncVB();
+    bones.forEach((b,i)=>{
+      const q=bones[b.par],t=q?[b.p[0]-q.p[0],b.p[1]-q.p[1],b.p[2]-q.p[2]]:b.p;
+      objects.push(N('NodeAttribute',[L(aIds[i]),S(nm(b.n,'NodeAttribute')),S('LimbNode')],[N('TypeFlags',[S('Skeleton')])]));
+      objects.push(N('Model',[L(bIds[i]),S(nm(b.n,'Model')),S('LimbNode')],[N('Version',[I(232)]),N('Properties70',[],[N('P',[S('Lcl Translation'),S('Lcl Translation'),S(''),S('A'),D(t[0]),D(t[1]),D(t[2])])]),N('Shading',[B(true)]),N('Culling',[S('CullingOff')])]));
+      conn.push(N('C',[S('OO'),L(aIds[i]),L(bIds[i])]),N('C',[S('OO'),L(bIds[i]),L(q?bIds[b.par]:0)]));
+    });
+    objects.push(N('Deformer',[L(skinId),S(nm('Skin','Deformer')),S('Skin')],[N('Version',[I(101)]),N('Link_DeformAcuracy',[D(50)])]));
+    conn.push(N('C',[S('OO'),L(skinId),L(geoId)]));
+    bones.forEach((b,i)=>{
+      const ix=[],wt=[];vb.forEach((k,vi)=>{if(k===i){ix.push(vi);wt.push(1);}});
+      objects.push(N('Deformer',[L(cIds[i]),S(nm(b.n,'SubDeformer')),S('Cluster')],[N('Version',[I(100)]),N('UserData',[S(''),S('')]),N('Indexes',[AI(ix)]),N('Weights',[AD(wt)]),N('Transform',[AD([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1])]),N('TransformLink',[AD([1,0,0,0,0,1,0,0,0,0,1,0,b.p[0],b.p[1],b.p[2],1])])]));
+      conn.push(N('C',[S('OO'),L(cIds[i]),L(skinId)]),N('C',[S('OO'),L(bIds[i]),L(cIds[i])]));
+    });
+  }
   const used=new Set();
   matKeys.forEach(k=>{
     const mname=k==='def'?'Default':k.indexOf('tex')===0?'Texture'+k.slice(3):'Color'+k.slice(2);
@@ -2315,7 +2953,7 @@ $('mCopy').addEventListener('click',()=>{
 $('mImport').addEventListener('click',()=>{
   const o=parseOBJ($('objtext').value);
   if(!o.v.length){$('mNote').textContent='No vertices found in that text.';return;}
-  pushUndo();verts=o.v;tris=o.t;selV=new Set();pending=[];changed();frame();closeModal();flash('Imported '+verts.length+' vertices, '+tris.length+' triangles');
+  pushUndo();verts=o.v;tris=o.t;setRig(parseRig($('objtext').value));selV=new Set();pending=[];changed();frame();closeModal();flash('Imported '+verts.length+' vertices, '+tris.length+' triangles');
 });
 
 /* ---------- free camera (fly) ---------- */
@@ -2385,6 +3023,7 @@ document.addEventListener('keydown',e=>{
     case 'BracketRight':stepScale(e.shiftKey?2:1.1);break;
     case 'BracketLeft':stepScale(e.shiftKey?0.5:1/1.1);break;
     case 'KeyL':selectLinked();break;
+    case 'Tab':e.preventDefault();selectLinked();break;
     case 'KeyA':e.altKey?selectNone():selectAll();break;
     case 'KeyF':case 'Home':frame();break;
     case 'KeyZ':toggleWire();break;
@@ -2392,7 +3031,7 @@ document.addEventListener('keydown',e=>{
     case 'Digit2':setMode('f');break;
     case 'Delete':deleteSel();break;
     case 'Backspace':e.preventDefault();if(tool==='tri'&&pending.length){pending.pop();updateOverlay();requestRender();}else deleteSel();break;
-    case 'Escape':if(pending.length){pending=[];updateOverlay();requestRender();}break;
+    case 'Escape':if(pending.length){pending=[];updateOverlay();requestRender();}else if(selB>=0){selB=-1;changed();}break;
     default:return;
   }
   e.preventDefault();
