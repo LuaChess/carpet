@@ -38,7 +38,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 #view{grid-area:view;display:flex;flex-direction:column;min-width:0;min-height:0}
 #vhead{display:flex;align-items:center;gap:10px;padding:4px 8px;background:var(--bg-1);border-bottom:1px solid var(--line);overflow-x:auto;white-space:nowrap;flex:none}
 #vp{position:relative;flex:1;min-height:0;overflow:hidden;touch-action:none;background:#262626}
-#vp[data-tool=vertex],#vp[data-tool=tri]{cursor:crosshair}
+#vp[data-tool=vertex],#vp[data-tool=tri],#vp[data-tool=paint],#vp[data-tool=bucket]{cursor:crosshair}
 #vp canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
 #vinfo{position:absolute;left:10px;top:8px;pointer-events:none;color:#d6d6d6;text-shadow:0 1px 2px #000;line-height:1.5}
 #vinfo .l1{font-weight:600;font-size:13px}
@@ -110,6 +110,8 @@ dd{margin:0;color:var(--fg-dim)}
     <button class="tool" type="button" data-tool="tri" title="Add Triangle (R)" aria-label="Add Triangle"><svg viewBox="0 0 24 24"><path d="M12 5l8 14H4z"/><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="20" cy="19" r="1.8" fill="currentColor"/><circle cx="4" cy="19" r="1.8" fill="currentColor"/></svg></button>
     <button class="tool" type="button" data-tool="rotate" title="Rotate (T)" aria-label="Rotate"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></svg></button>
     <button class="tool" type="button" data-tool="scale" title="Scale (Y)" aria-label="Scale"><svg viewBox="0 0 24 24"><path d="M5 19V9h10v10z"/><path d="M13 11l6-6M14 5h5v5"/></svg></button>
+    <button class="tool" type="button" data-tool="paint" title="Paint (P)" aria-label="Paint"><svg viewBox="0 0 24 24"><path d="M18 3l3 3-8.5 8.5-3-3z"/><path d="M9.5 11.5c-2.8 0-4.5 1.8-4.5 4 0 1.5-.8 2.8-2 3.5 3.8.8 9.5-.5 9.5-4.5"/></svg></button>
+    <button class="tool" type="button" data-tool="bucket" title="Bucket fill (B)" aria-label="Bucket fill"><svg viewBox="0 0 24 24"><path d="M19 11.5L10.5 3 3.2 10.3a2 2 0 0 0 0 2.8l5.2 5.2a2 2 0 0 0 2.8 0z"/><path d="M5.5 2.5l5 5"/><path d="M3 13h15.500"/><path d="M22 19.500a2 2 0 1 1-4 0c0-1.600 1.500-2.400 2-4 .5 1.600 2 2.400 2 4z"/></svg></button>
   </div>
 
   <div id="view">
@@ -140,6 +142,7 @@ dd{margin:0;color:var(--fg-dim)}
       <div class="row"><label for="planeOff">Offset</label><input id="planeOff" type="number" step="0.5" value="0"></div>
       <div class="row"><label for="snapOn">Snap</label><input id="snapOn" type="checkbox" checked><select id="snapSize"><option value="0.1">0.1</option><option value="0.25">0.25</option><option value="0.5" selected>0.5</option><option value="1">1</option></select></div>
       <div class="row"><label for="dotSize">Dot size</label><input id="dotSize" type="range" min="0" max="20" step="0.5" value="8"></div>
+      <div class="row"><label for="brushSize">Brush size</label><input id="brushSize" type="range" min="0.05" max="3" step="0.05" value="0.4"></div>
       <div class="row"><span class="lbl">Move axis</span><div class="seg" id="axisSeg"><button class="btn" type="button" data-axis="">Free</button><button class="btn" type="button" data-axis="x">X</button><button class="btn" type="button" data-axis="y">Y</button><button class="btn" type="button" data-axis="z">Z</button></div></div>
     </div></details>
     <details class="panel"><summary>Selection</summary><div class="pbody">
@@ -196,8 +199,7 @@ dd{margin:0;color:var(--fg-dim)}
     </div></details>
     <details class="panel"><summary>Shortcuts</summary><div class="pbody"><dl>
       <dt>Q W E R T Y</dt><dd>Select, Move, Vertex, Triangle, Rotate, Scale</dd>
-      <dt>G</dt><dd>Grab selection, then X Y Z</dd>
-      <dt>S</dt><dd>Resize selection evenly, then X Y Z for one axis, Shift+X Y Z to skip an axis</dd>
+      <dt>P / B</dt><dd>Paint brush / Bucket fill (uses the Color picker)</dd>
       <dt>[ and ]</dt><dd>Shrink / grow selection by 10% (Shift: half / double)</dd>
       <dt>Ctrl+C, V, D</dt><dd>Copy, paste, duplicate selection</dd>
       <dt>A / Alt+A</dt><dd>Select all / none</dd>
@@ -732,8 +734,8 @@ function beginRotate(h,x,y){
 function beginScale(h,x,y){
   const base=xBase();
   if(h==='u')return Object.assign(base,{kind:'scl',uniform:true,sx:x,sy:y});
-  const a=AX[h],t0=axisParam(x,y,base.origin,a);if(t0===null)return null;
-  return Object.assign(base,{kind:'scl',axisVec:a,t0,len:Math.max(0.2,sclGizmo.scale.x*0.9)});
+  const neg=h.length===2,a=AX[neg?h[1]:h],t0=axisParam(x,y,base.origin,a);if(t0===null)return null;
+  return Object.assign(base,{kind:'scl',axisVec:a,t0,neg,len:Math.max(0.2,sclGizmo.scale.x*0.9)});
 }
 function updateXform(x,y){
   let info='';
@@ -755,14 +757,21 @@ function updateXform(x,y){
     let sc;
     if(mv.msc)sc=Math.hypot(x-mv.cx,y-mv.cy)/mv.d0;
     else if(mv.uniform)sc=Math.exp(((x-mv.sx)+(mv.sy-y))/200);
-    else{const t=axisParam(x,y,mv.origin,mv.axisVec);if(t===null)return;sc=1+(t-mv.t0)/mv.len;}
+    else{const t=axisParam(x,y,mv.origin,mv.axisVec);if(t===null)return;sc=1+(mv.neg?-1:1)*(t-mv.t0)/mv.len;}
     sc=Math.max(0.01,sc);if(snapOn)sc=Math.max(0.05,Math.round(sc*20)/20);
     if(!mv.pushed){pushUndo();mv.pushed=true;}
+    const org=mv.origin.clone();
+    if(mv.ctrl&&mv.orig.length){
+      const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
+      mv.orig.forEach(o=>{for(let k=0;k<3;k++){if(o.p[k]<mn[k])mn[k]=o.p[k];if(o.p[k]>mx[k])mx[k]=o.p[k];}});
+      const ks=mv.msc?['x','y','z'].map(a=>mv.lock?(mv.excl?a!==mv.lock:a===mv.lock):true):mv.uniform?[true,true,true]:['x','y','z'].map(a=>AX[a]===mv.axisVec);
+      ks.forEach((on,k)=>{if(on)org.setComponent(k,mv.neg?mx[k]:mn[k]);});
+    }
     mv.orig.forEach(o=>{
-      const d=new THREE.Vector3(o.p[0],o.p[1],o.p[2]).sub(mv.origin);
+      const d=new THREE.Vector3(o.p[0],o.p[1],o.p[2]).sub(org);
       if(mv.msc){const mk=['x','y','z'].map(a=>mv.lock?(mv.excl?a!==mv.lock:a===mv.lock):true);d.x*=mk[0]?sc:1;d.y*=mk[1]?sc:1;d.z*=mk[2]?sc:1;}
       else if(mv.uniform)d.multiplyScalar(sc);else d.addScaledVector(mv.axisVec,d.dot(mv.axisVec)*(sc-1));
-      d.add(mv.origin);verts[o.i]=[d.x,d.y,d.z];
+      d.add(org);verts[o.i]=[d.x,d.y,d.z];
     });
     if(mv.lorig&&mv.li!=null)lights[mv.li].scl=Math.max(0.1,Math.round(mv.lorig.scl*sc*1000)/1000);
     info='Scale '+sc.toFixed(2)+(mv.msc&&mv.lock?(mv.excl?'  not ':'  only ')+mv.lock.toUpperCase():'');
@@ -1042,6 +1051,12 @@ rotGizmo.visible=sclGizmo.visible=false;scene.add(rotGizmo,sclGizmo);
   const cube=new THREE.Mesh(new THREE.BoxGeometry(0.13,0.13,0.13),gmat(GC[a]));cube.position.y=0.9;
   const sh=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.0,8),pickMat);sh.position.y=0.55;sh.userData={handle:a,pri:1};
   shaft.renderOrder=cube.renderOrder=20;g.add(shaft,cube,sh);sclPick.push(sh);sclGizmo.add(g);
+  const gn=new THREE.Group();
+  if(a==='x')gn.rotation.z=-Math.PI/2;else if(a==='z')gn.rotation.x=Math.PI/2;
+  const shaftN=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.014,0.8,8),gmat(GC[a],0.7));shaftN.position.y=-0.4;
+  const cubeN=new THREE.Mesh(new THREE.BoxGeometry(0.13,0.13,0.13),gmat(GC[a],0.7));cubeN.position.y=-0.9;
+  const shN=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.0,8),pickMat);shN.position.y=-0.55;shN.userData={handle:'n'+a,pri:1};
+  shaftN.renderOrder=cubeN.renderOrder=20;gn.add(shaftN,cubeN,shN);sclPick.push(shN);sclGizmo.add(gn);
 });
 {
   const cc=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,0.16),gmat(0xffffff,0.95));cc.renderOrder=21;
@@ -1105,6 +1120,66 @@ function selectLinked(){
   while(q.length){const i=q.pop();nb[i].forEach(j=>{if(!seen.has(j)){seen.add(j);q.push(j);}});}
   selV=seen;changed();flash('Selected linked geometry');
 }
+function paintAt(P,hex,st){
+  const r=parseFloat($('brushSize').value)||0.4,tr=new THREE.Triangle(),tmp=new THREE.Vector3(),A=new THREE.Vector3(),B=new THREE.Vector3(),C=new THREE.Vector3();
+  const V=(i,o)=>o.set(verts[i][0],verts[i][1],verts[i][2]);
+  let did=false;
+  const touch=()=>{if(!st.pushed){pushUndo();st.pushed=true;}did=true;};
+  for(let pass=0;pass<6&&tris.length<150000;pass++){
+    const split=new Set();
+    tris.forEach((t,i)=>{
+      V(t[0],A);V(t[1],B);V(t[2],C);
+      if(Math.min(A.x,B.x,C.x)>P.x+r||Math.max(A.x,B.x,C.x)<P.x-r||Math.min(A.y,B.y,C.y)>P.y+r||Math.max(A.y,B.y,C.y)<P.y-r||Math.min(A.z,B.z,C.z)>P.z+r||Math.max(A.z,B.z,C.z)<P.z-r)return;
+      tr.set(A,B,C);tr.closestPointToPoint(P,tmp);if(tmp.distanceTo(P)>r)return;
+      if(Math.max(A.distanceTo(B),B.distanceTo(C),C.distanceTo(A))>r*0.8)split.add(i);
+    });
+    if(!split.size)break;
+    touch();
+    const mid=new Map(),out=[];
+    const midOf=(a,b)=>{const k=a<b?a+'_'+b:b+'_'+a;if(!mid.has(k)){const X=verts[a],Y=verts[b];verts.push([(X[0]+Y[0])/2,(X[1]+Y[1])/2,(X[2]+Y[2])/2]);mid.set(k,verts.length-1);}return mid.get(k);};
+    tris.forEach((t,i)=>{
+      if(!split.has(i)){out.push(t);return;}
+      const a=t[0],b=t[1],c=t[2],ab=midOf(a,b),bc=midOf(b,c),ca=midOf(c,a),k=t[3]||null;
+      out.push([a,ab,ca,k],[b,bc,ab,k],[c,ca,bc,k],[ab,bc,ca,k]);
+    });
+    tris=out;
+  }
+  tris.forEach((t,i)=>{
+    if((t[3]||null)===hex)return;
+    V(t[0],A);V(t[1],B);V(t[2],C);
+    if(A.add(B).add(C).multiplyScalar(1/3).distanceTo(P)>r)return;
+    touch();tris[i]=[t[0],t[1],t[2],hex];
+  });
+  return did;
+}
+function dabAt(x,y,st){
+  if(!tris.length)return;
+  setRay(x,y);const h=raycaster.intersectObject(solid,false);
+  if(!h.length)return;
+  if(paintAt(h[0].point.clone(),$('paint').value,st))changed();
+}
+function strokeTo(x,y,st){
+  const dx=x-st.lx,dy=y-st.ly,n=Math.min(16,Math.max(1,Math.ceil(Math.hypot(dx,dy)/5)));
+  for(let k=1;k<=n;k++)dabAt(st.lx+dx*k/n,st.ly+dy*k/n,st);
+  st.lx=x;st.ly=y;
+}
+function bucketFill(fi){
+  const hex=$('paint').value,col=tris[fi][3]||null;
+  if(col===hex){flash('Already that color');return;}
+  const sel=selTris(),limit=sel.length&&sel.includes(fi)?new Set(sel):null;
+  const key=(a,b)=>a<b?a*1048576+b:b*1048576+a,em=new Map();
+  tris.forEach((t,i)=>{for(let k=0;k<3;k++){const kk=key(t[k],t[(k+1)%3]);if(!em.has(kk))em.set(kk,[]);em.get(kk).push(i);}});
+  const seen=new Set([fi]),q=[fi];
+  while(q.length){
+    const i=q.pop(),t=tris[i];
+    for(let k=0;k<3;k++)em.get(key(t[k],t[(k+1)%3])).forEach(j=>{
+      if(seen.has(j)||(tris[j][3]||null)!==col||(limit&&!limit.has(j)))return;
+      seen.add(j);q.push(j);
+    });
+  }
+  pushUndo();seen.forEach(i=>{const t=tris[i];tris[i]=[t[0],t[1],t[2],hex];});changed();
+  flash('Filled '+seen.size+(seen.size===1?' face':' faces'));
+}
 function paintSel(hex){
   const st=selTris();if(!st.length){flash('Select triangles to color');return;}
   pushUndo();st.forEach(ti=>{const t=tris[ti];tris[ti]=[t[0],t[1],t[2],hex];});changed();
@@ -1143,7 +1218,9 @@ const HINTS={
   vertex:'Add Vertex: click on the model to place a point on its surface, or on the work plane where there is no model. Hold Ctrl to always use the work plane. Drag the gizmo to move it.',
   tri:'Triangle: click three points. Click an existing vertex to reuse it. Esc cancels.',
   rotate:'Rotate: drag a ring to rotate the selection or the selected light. Snap rounds to 15 degrees.',
-  scale:'Scale: drag an axis handle to stretch, or the center cube to resize evenly.'
+  scale:'Scale: drag an axis handle to stretch, or the center cube to resize evenly.',
+  paint:'Paint: click or drag on the model to paint with the Color picker (Selection panel). Brush size is in the Tool panel. Faces under the brush are split so the paint stays round.',
+  bucket:'Bucket: click a face to fill all connected faces of the same color. If the face is selected, the fill stays inside the selection.'
 };
 function updateHint(){
   $('hint').textContent=flashMsg||(R.on?'Render preview: drag to orbit (Shift pan), wheel to zoom, arrow keys or WASD while dragging to fly. Adjust the Render panel, then Save image.':mv&&mv.modal?(mv.msc?'Scale: move the mouse, click or Enter to confirm, Esc to cancel. X, Y, Z resize one axis, Shift+X, Y, Z skip that axis.':'Grab: move the mouse, click or Enter to confirm, Esc to cancel. X, Y, Z lock an axis.'):HINTS[tool]);
@@ -1152,7 +1229,7 @@ function flash(m){flashMsg=m;updateHint();clearTimeout(flashT);flashT=setTimeout
 function updateInfo(){
   const l=vp.querySelector('#vinfo');
   l.querySelector('.l1').textContent=view.name+' '+(view.ortho?'Orthographic':'Perspective');
-  l.querySelector('.l2').textContent=R.on?'Render Preview':'Edit Mode | '+(mode==='v'?'Vertex':'Face')+' select | '+({select:'Select',move:'Move',vertex:'Add Vertex',tri:'Add Triangle',rotate:'Rotate',scale:'Scale'})[tool];
+  l.querySelector('.l2').textContent=R.on?'Render Preview':'Edit Mode | '+(mode==='v'?'Vertex':'Face')+' select | '+({select:'Select',move:'Move',vertex:'Add Vertex',tri:'Add Triangle',rotate:'Rotate',scale:'Scale',paint:'Paint',bucket:'Bucket'})[tool];
 }
 function updateSelUI(){
   const n=selV.size,st=selTris().length;
@@ -1197,6 +1274,10 @@ vp.addEventListener('pointerdown',e=>{
   }
   if(tool==='vertex'&&!(e.ctrlKey||e.metaKey)&&pickVertex(p.x,p.y)<0&&pickFace(p.x,p.y)>=0){insertOnMesh(p.x,p.y);return;}
   if(tool==='tri'||tool==='vertex'){placeAt(p.x,p.y);return;}
+  if(tool==='paint'||tool==='bucket'){
+    if(tool==='bucket'){const fi=pickFace(p.x,p.y);if(fi>=0)bucketFill(fi);return;}
+    drag={kind:'paint',pushed:false,lx:p.x,ly:p.y};vp.setPointerCapture(e.pointerId);dabAt(p.x,p.y,drag);return;
+  }
   if(gizVisible()){
     const gh=pickGizmo(p.x,p.y);
     if(gh){const m=beginGizmoMove(gh,p.x,p.y);if(m){mv=m;drag={kind:'gizmo'};vp.setPointerCapture(e.pointerId);return;}}
@@ -1214,9 +1295,11 @@ vp.addEventListener('pointerdown',e=>{
 vp.addEventListener('pointermove',e=>{
   if(e.target.closest('#gizmo'))return;
   const p=local(e);lastMouse=p;
+  if(mv)mv.ctrl=e.ctrlKey||e.metaKey;
   if(mv&&mv.modal){updateMove(p.x,p.y);return;}
   if(drag){
     if(drag.kind==='orbit'||drag.kind==='pan'){applyNav(drag.kind,e.clientX-drag.lx,e.clientY-drag.ly);drag.lx=e.clientX;drag.ly=e.clientY;drag.moved=true;return;}
+    if(drag.kind==='paint'){strokeTo(p.x,p.y,drag);return;}
     if(drag.kind==='gizmo'){updateMove(p.x,p.y);return;}
     if(drag.kind==='click'&&Math.hypot(p.x-drag.sx,p.y-drag.sy)>4){
       drag.moved=true;
@@ -1294,7 +1377,7 @@ function run(a){
   if(a==='add:light')return addLight();
   if(a.indexOf('add:')===0)return addPrim(a.slice(4));
   if(a.indexOf('view:')===0)return setView(a.slice(5));
-  const f={new:newMesh,import:()=>openModal('import'),export:()=>openModal('export'),undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
+  const f={new:newMesh,import:importOBJ,export:exportOBJ,undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
   if(f)f();
 }
 let openWrap=null;
@@ -1335,6 +1418,27 @@ function parseOBJ(text){
     }
   });
   return {v:V,t:T.filter(t=>t.every(i=>Number.isInteger(i)&&i>=0&&i<V.length))};
+}
+function exportOBJ(){
+  const blob=new Blob([toOBJ()+'\n'],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='model.obj';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);flash('Saved model.obj');
+}
+function importOBJ(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='.obj,text/plain';
+  inp.addEventListener('change',()=>{
+    const f=inp.files&&inp.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{
+      const o=parseOBJ(String(r.result));
+      if(!o.v.length){flash('No vertices found in that file');return;}
+      pushUndo();verts=o.v;tris=o.t;selV=new Set();pending=[];changed();frame();
+      flash('Imported '+f.name+': '+verts.length+' vertices, '+tris.length+' triangles');
+    };
+    r.onerror=()=>flash('Could not read that file');
+    r.readAsText(f);
+  });
+  inp.click();
 }
 function openModal(m){
   const ta=$('objtext'),ex=m==='export';
@@ -1418,6 +1522,8 @@ document.addEventListener('keydown',e=>{
     case 'KeyR':setTool('tri');break;
     case 'KeyT':setTool('rotate');break;
     case 'KeyY':setTool('scale');break;
+    case 'KeyP':setTool('paint');break;
+    case 'KeyB':setTool('bucket');break;
     case 'KeyG':startGrab();break;
     case 'KeyS':startScale();break;
     case 'BracketRight':stepScale(e.shiftKey?2:1.1);break;
