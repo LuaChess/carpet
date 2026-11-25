@@ -250,12 +250,26 @@ dd{margin:0;color:var(--fg-dim)}
       <div class="row"><span class="lbl">Position</span><input id="fr_x" type="number" step="0.5" title="X"><input id="fr_y" type="number" step="0.5" title="Y"><input id="fr_z" type="number" step="0.5" title="Z"></div>
       <div class="muted">Flames and smoke slide around objects and pool under them.</div>
     </div></details>
+    <details class="panel" id="gasPanel"><summary>Gas</summary><div class="pbody">
+      <div id="ga_info" class="muted">Select a gas (Add &gt; Miscellaneous &gt; Gas). Rotate it with the Rotate gizmo to aim it.</div>
+      <div class="row"><label for="ga_col">Color</label><input id="ga_col" type="color" value="#9fd8ff"></div>
+      <div class="row"><label for="ga_speed">Speed</label><input id="ga_speed" type="range" min="0.2" max="12" step="0.1" value="3"></div>
+      <div class="row"><label for="ga_cone">Cone angle</label><input id="ga_cone" type="range" min="0" max="90" step="1" value="15"></div>
+      <div class="row"><label for="ga_dens">Amount</label><input id="ga_dens" type="range" min="0.2" max="3" step="0.05" value="1"></div>
+      <div class="row"><label for="ga_size">Puff size</label><input id="ga_size" type="range" min="0.3" max="3" step="0.05" value="1"></div>
+      <div class="row"><label for="ga_life">Lifetime</label><input id="ga_life" type="range" min="1" max="10" step="0.5" value="4"></div>
+      <div class="row"><label for="ga_lift">Lift</label><input id="ga_lift" type="range" min="-2" max="2" step="0.05" value="0"></div>
+      <div class="row"><label for="ga_spread">Spread on hit</label><input id="ga_spread" type="range" min="0" max="3" step="0.05" value="1"></div>
+      <div class="muted">The two arrows show the spread direction (cone angle) in modelling mode. Gas hits geometry and spreads over it. Lift above 0 rises, below 0 sinks. The gas is only rendered in Render mode.</div>
+    </div></details>
     <details class="panel"><summary>Play mode</summary><div class="pbody">
       <div id="pl_note" class="muted"></div>
       <button class="btn" type="button" id="pl_btn">Play</button>
       <div class="row"><label for="pl_walk">Walk speed</label><input id="pl_walk" type="range" min="1" max="20" step="0.5" value="5"><span id="pl_walk_v" class="muted" style="width:26px;text-align:right">5</span></div>
       <div class="row"><label for="pl_jump">Jump power</label><input id="pl_jump" type="range" min="0" max="25" step="0.5" value="9"><span id="pl_jump_v" class="muted" style="width:26px;text-align:right">9</span></div>
-      <div class="muted">WASD or arrows walk, Space jumps, mouse looks (locked), Esc stops.</div>
+      <div class="row"><label for="pl_fov">FOV</label><input id="pl_fov" type="range" min="30" max="120" step="1" value="40"><span id="pl_fov_v" class="muted" style="width:26px;text-align:right">40</span></div>
+      <div class="row"><label for="pl_sens">Mouse sens</label><input id="pl_sens" type="range" min="0.1" max="3" step="0.05" value="1"><span id="pl_sens_v" class="muted" style="width:26px;text-align:right">1</span></div>
+      <div class="muted">WASD or arrows walk, Space jumps, mouse looks (locked), Esc stops. While playing: [ and ] change FOV, - and = change mouse sensitivity.</div>
     </div></details>
     <details class="panel" id="physPanel"><summary>Physics</summary><div class="pbody">
       <div class="muted">Off by default. Select an object (a rig counts as one object), enable physics, then click Render: it falls, rolls and collides. Turn Render off to reset.</div>
@@ -920,7 +934,8 @@ function plFrame(t){
 function startPlay(){
   if(!R.on){flash('Turn on Render to play');return;}
   if(PL.on)return;
-  PL.saved={theta:view.theta,phi:view.phi,dist:view.dist,target:view.target.clone(),name:view.name};
+  PL.saved={theta:view.theta,phi:view.phi,dist:view.dist,target:view.target.clone(),name:view.name,fov:persp.fov};
+  persp.fov=Math.min(120,Math.max(30,parseFloat($('pl_fov').value)||40));
   let sx=0,sy=0,sz=1;
   if(verts.length){
     const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
@@ -940,7 +955,7 @@ function stopPlay(){
   if(!PL.on)return;
   PL.on=false;FPV=false;cancelAnimationFrame(PL.raf);PL.raf=0;PL.keys.clear();player.visible=false;
   if(document.pointerLockElement)document.exitPointerLock();
-  if(PL.saved){view.theta=PL.saved.theta;view.phi=PL.saved.phi;view.dist=PL.saved.dist;view.target.copy(PL.saved.target);view.name=PL.saved.name;}
+  if(PL.saved){view.theta=PL.saved.theta;view.phi=PL.saved.phi;view.dist=PL.saved.dist;view.target.copy(PL.saved.target);view.name=PL.saved.name;persp.fov=PL.saved.fov;}
   updateCamera();updateInfo();syncPlayUI();requestRender();
 }
 {
@@ -1218,6 +1233,8 @@ function physStop(){if(PH){cancelAnimationFrame(PH.raf);PH=null;}}
 $('pl_btn').addEventListener('click',()=>{if(PL.on)stopPlay();else startPlay();});
 $('pl_walk').addEventListener('input',e=>{$('pl_walk_v').textContent=e.target.value;});
 $('pl_jump').addEventListener('input',e=>{$('pl_jump_v').textContent=e.target.value;});
+$('pl_fov').addEventListener('input',e=>{$('pl_fov_v').textContent=e.target.value;if(PL.on){persp.fov=Math.min(120,Math.max(30,parseFloat(e.target.value)||40));updateCamera();requestRender();}});
+$('pl_sens').addEventListener('input',e=>{$('pl_sens_v').textContent=e.target.value;});
 window.addEventListener('keydown',e=>{
   if(!PL.on||!$('modal').hidden)return;
   const t=e.target;
@@ -1225,6 +1242,8 @@ window.addEventListener('keydown',e=>{
   if(e.ctrlKey||e.metaKey||e.code==='Tab'||/^F\d+$/.test(e.code))return;
   if(e.code==='Escape'){stopPlay();}
   else if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))PL.keys.add(e.code);
+  else if(e.code==='BracketLeft'||e.code==='BracketRight'){const el=$('pl_fov'),v=Math.min(120,Math.max(30,(parseFloat(el.value)||40)+(e.code==='BracketRight'?2:-2)));el.value=v;$('pl_fov_v').textContent=v;persp.fov=v;updateCamera();requestRender();flash('FOV '+v);}
+  else if(e.code==='Minus'||e.code==='Equal'){const el=$('pl_sens'),v=Math.round(Math.min(3,Math.max(0.1,(parseFloat(el.value)||1)+(e.code==='Equal'?0.1:-0.1)))*100)/100;el.value=v;$('pl_sens_v').textContent=v;flash('Mouse sensitivity '+v);}
   e.preventDefault();e.stopImmediatePropagation();
 },true);
 window.addEventListener('keyup',e=>{
@@ -1237,8 +1256,9 @@ document.addEventListener('pointerlockchange',()=>{if(PL.on&&document.pointerLoc
 document.addEventListener('pointerlockerror',()=>{if(PL.on){flash('Mouse lock failed, click Stop and try again');stopPlay();}});
 document.addEventListener('mousemove',e=>{
   if(!PL.on||document.pointerLockElement!==vp)return;
-  view.theta-=e.movementX*0.0025;
-  view.phi=Math.min(Math.PI-0.05,Math.max(0.05,view.phi-e.movementY*0.0025));
+  const sn=Math.min(3,Math.max(0.1,parseFloat($('pl_sens').value)||1));
+  view.theta-=e.movementX*0.0025*sn;
+  view.phi=Math.min(Math.PI-0.05,Math.max(0.05,view.phi-e.movementY*0.0025*sn));
 },true);
 ['pointerdown','pointermove','pointerup','mousedown','contextmenu'].forEach(n=>{
   window.addEventListener(n,e=>{if(PL.on&&vp.contains(e.target)&&!e.target.closest('#gizmo')){e.preventDefault();e.stopImmediatePropagation();}},true);
@@ -1598,7 +1618,7 @@ function updateBoneMove(x,y){
 function xBase(){
   if(boneGz())return {orig:[],li:null,lorig:null,modal:false,pushed:false,gizmo:true,origin:new THREE.Vector3().fromArray(boneGzCenter()),bone:rigSnap(selB)};
   const lt=!selV.size&&selL>=0;
-  return {orig:[...selV].map(i=>({i,p:verts[i].slice()})),li:lt?selL:null,lorig:lt?JSON.parse(JSON.stringify(lights[selL])):null,modal:false,pushed:fireSel(),fi:fireSel()?selF:null,fo:fireSel()?fires[selF].pos.slice():null,fs:fireSel()?fires[selF].size:null,gizmo:true,origin:new THREE.Vector3().fromArray(gizmoCenter())};
+  return {orig:[...selV].map(i=>({i,p:verts[i].slice()})),li:lt?selL:null,lorig:lt?JSON.parse(JSON.stringify(lights[selL])):null,modal:false,pushed:fireSel(),fi:fireSel()?selF:null,fo:fireSel()?fires[selF].pos.slice():null,fs:fireSel()?fires[selF].size:null,frot:fireSel()?(fires[selF].rot||[0,0,0]).slice():null,gizmo:true,origin:new THREE.Vector3().fromArray(gizmoCenter())};
 }
 function beginRotate(h,x,y){
   const base=xBase(),a=AX[h],pl=new THREE.Plane().setFromNormalAndCoplanarPoint(a,base.origin);
@@ -1627,6 +1647,11 @@ function updateXform(x,y){
       const r0=mv.lorig.rot,qo=new THREE.Quaternion().setFromEuler(new THREE.Euler(r0[0]*D2R,r0[1]*D2R,r0[2]*D2R,'XYZ'));
       const e=new THREE.Euler().setFromQuaternion(q.clone().multiply(qo),'XYZ');
       lights[mv.li].rot=[e.x,e.y,e.z].map(t=>Math.round(t/D2R*100)/100);
+    }
+    if(mv.frot&&mv.fi!=null&&fires[mv.fi]){
+      const qo=new THREE.Quaternion().setFromEuler(new THREE.Euler(mv.frot[0]*D2R,mv.frot[1]*D2R,mv.frot[2]*D2R,'XYZ'));
+      const e=new THREE.Euler().setFromQuaternion(q.clone().multiply(qo),'XYZ');
+      fires[mv.fi].rot=[e.x,e.y,e.z].map(t=>Math.round(t/D2R*100)/100);syncFireIcons();
     }
     info='Rotate '+(da/D2R).toFixed(1)+' deg';
   }else{
@@ -1849,7 +1874,7 @@ function updateMove(x,y){
 function endMove(commit){
   if(!mv)return;
   if(!commit&&mv.bone){mv.bone.bs.forEach(a=>{bones[a[0]].p=a[1].slice();});mv.bone.vs.forEach(a=>{verts[a[0]]=a[1].slice();});}
-  if(!commit){mv.orig.forEach(o=>{verts[o.i]=o.p.slice();});if(mv.lorig&&mv.li!=null)lights[mv.li]=mv.lorig;if(mv.fo&&mv.fi!=null&&fires[mv.fi]){fires[mv.fi].pos=mv.fo.slice();if(mv.fs!=null)fires[mv.fi].size=mv.fs;}if(mv.pushed&&!mv.fo)undoStack.pop();}
+  if(!commit){mv.orig.forEach(o=>{verts[o.i]=o.p.slice();});if(mv.lorig&&mv.li!=null)lights[mv.li]=mv.lorig;if(mv.fo&&mv.fi!=null&&fires[mv.fi]){fires[mv.fi].pos=mv.fo.slice();if(mv.fs!=null)fires[mv.fi].size=mv.fs;if(mv.frot)fires[mv.fi].rot=mv.frot.slice();syncFireIcons();}if(mv.pushed&&!mv.fo)undoStack.pop();}
   if(commit&&mv.fo)saveFires();
   mv=null;$('coords').textContent='';changed();updateHint();
 }
@@ -2136,7 +2161,7 @@ function updateSelUI(){
   const n=selV.size,st=selTris().length;
   $('selInfo').textContent=n?n+(n===1?' vertex':' vertices')+', '+st+(st===1?' triangle':' triangles')+' selected':'Nothing selected';
   const lt=!n&&selL>=0?lights[selL]:null;if(lt)$('selInfo').textContent='Light selected';
-  const ft=fireSel()?fires[selF]:null;if(ft)$('selInfo').textContent='Fire selected';
+  const ft=fireSel()?fires[selF]:null;if(ft)$('selInfo').textContent=ft.gas?'Gas selected':'Fire selected';
   const m=n?median():(lt?lt.pos:(ft?ft.pos:null));
   ['fx','fy','fz'].forEach((id,k)=>{const el=$(id);el.disabled=!m;if(document.activeElement!==el)el.value=m?String(Math.round(m[k]*1e4)/1e4):'';});
 }
@@ -2278,13 +2303,14 @@ $('snapSize').addEventListener('change',e=>{snapSize=parseFloat(e.target.value)|
 const MENUS={
   File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export'],['Import FBX...','importfbx'],['Export FBX...','exportfbx'],['Import Blend...','importblend']],
   Edit:[['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Shift+Z'],null,['Copy','copy','Ctrl+C'],['Paste','paste','Ctrl+V'],['Duplicate','dup','Ctrl+D'],['Scale','scale'],null,['Delete','del','Del'],['Flip Normals','flip'],['Subdivide','subdiv'],['Merge at Center','merge']],
-  Add:[['Triangle','add:tri'],['Quad','add:quad'],['Cube','add:cube'],['Pyramid','add:pyr'],['Octahedron','add:oct'],['Light','add:light'],null,['Miscellaneous',null],['Fire','add:fire']],
+  Add:[['Triangle','add:tri'],['Quad','add:quad'],['Cube','add:cube'],['Pyramid','add:pyr'],['Octahedron','add:oct'],['Light','add:light'],null,['Miscellaneous',null],['Fire','add:fire'],['Gas','add:gas']],
   Select:[['All','selall','A'],['None','selnone','Alt+A'],['Invert','selinv','Ctrl+I'],['Linked (Object)','linked','L']],
   View:[['Frame Selected','frame','F'],['Front','view:front','Num 1'],['Right','view:right','Num 3'],['Top','view:top','Num 7'],['Persp / Ortho','ortho','Num 5'],['Solid / Wire','wire','Z'],['Render Preview','render'],['Save Render...','saverender']]
 };
 function run(a){
   if(a==='add:light')return addLight();
   if(a==='add:fire')return addFire();
+  if(a==='add:gas')return addGas();
   if(a.indexOf('add:')===0)return addPrim(a.slice(4));
   if(a.indexOf('view:')===0)return setView(a.slice(5));
   const f={new:newMesh,import:importOBJ,export:exportOBJ,importfbx:importFBX,importblend:importBlend,exportfbx:exportFBX,undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
@@ -3389,7 +3415,9 @@ $('tx_prev').addEventListener('click',e=>{
 /* ---------- fire (Add > Miscellaneous) ---------- */
 const FIRE_KEY='carpet-fires-v1';
 let fires=[],selF=-1,fpi=-1;
-try{const o=JSON.parse(localStorage.getItem(FIRE_KEY)||'[]');if(Array.isArray(o))fires=o.filter(f=>f&&Array.isArray(f.pos)&&f.pos.length===3&&f.pos.every(Number.isFinite)).map(f=>({pos:f.pos,smoke:!!f.smoke,size:Math.min(3,Math.max(.3,+f.size||1)),inten:Math.min(2,Math.max(.2,+f.inten||1))}));}catch(e){}
+const GCL=(v,a,b,d)=>Number.isFinite(+v)?Math.min(b,Math.max(a,+v)):d;
+function gasNorm(f){return {gas:true,color:/^#[0-9a-f]{6}$/i.test(f.color)?f.color:'#9fd8ff',speed:GCL(f.speed,.2,12,3),cone:GCL(f.cone,0,90,15),dens:GCL(f.dens,.2,3,1),life:GCL(f.life,1,10,4),lift:GCL(f.lift,-2,2,0),spread:GCL(f.spread,0,3,1)};}
+try{const o=JSON.parse(localStorage.getItem(FIRE_KEY)||'[]');if(Array.isArray(o))fires=o.filter(f=>f&&Array.isArray(f.pos)&&f.pos.length===3&&f.pos.every(Number.isFinite)).map(f=>({pos:f.pos,smoke:!!f.smoke,size:Math.min(3,Math.max(.3,+f.size||1)),inten:Math.min(2,Math.max(.2,+f.inten||1)),rot:(Array.isArray(f.rot)&&f.rot.length===3&&f.rot.every(Number.isFinite))?f.rot:[0,0,0],...(f.gas?gasNorm(f):{})}));}catch(e){}
 fpi=fires.length?0:-1;
 function saveFires(){try{localStorage.setItem(FIRE_KEY,JSON.stringify(fires));}catch(e){}}
 const fireTex=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d'),g=x.createRadialGradient(32,32,0,32,32,32);
@@ -3412,6 +3440,7 @@ function makeGas(max,blend){
   scene.add(o);return o;
 }
 const flamePts=makeGas(FMAX,THREE.AdditiveBlending),smokePts=makeGas(SMAX,THREE.NormalBlending);
+const GMAX=4000,gasPts=makeGas(GMAX,THREE.NormalBlending);let gasP=[],gasAcc=[];
 const fireLight=new THREE.PointLight(0xff8830,0,8,2);fireLight.visible=false;scene.add(fireLight);
 const gasRay=new THREE.Raycaster(),_fgd=new THREE.Vector3(),_fgn=new THREE.Vector3();
 let flames=[],smokes=[],fireT=0,fireRaf=0,fireFrame=0,spawnAcc=[],smokeAcc=[];
@@ -3433,37 +3462,85 @@ function gasMove(q,dt,bounce,spread,test){
   }
   q.p[0]+=vx;q.p[1]+=vy;q.p[2]+=vz;
 }
+function gasEmit(f,fi,dt){
+  gasAcc[fi]=(gasAcc[fi]||0)+dt*50*f.dens*f.size;
+  const rt=f.rot||[0,0,0],fq=new THREE.Quaternion().setFromEuler(new THREE.Euler(rt[0]*D2R,rt[1]*D2R,rt[2]*D2R,'XYZ')),v=new THREE.Vector3(),o=new THREE.Vector3(),cone=f.cone*D2R;
+  while(gasAcc[fi]>=1&&gasP.length<GMAX){gasAcc[fi]--;
+    const a=Math.random()*6.283,t=Math.sqrt(Math.random())*cone;
+    v.set(Math.sin(t)*Math.cos(a),Math.sin(t)*Math.sin(a),Math.cos(t)).multiplyScalar(f.speed*(.85+Math.random()*.3)).applyQuaternion(fq);
+    o.set((Math.random()-.5)*.12,(Math.random()-.5)*.12,0).multiplyScalar(f.size).applyQuaternion(fq);
+    gasP.push({p:[f.pos[0]+o.x,f.pos[1]+o.y,f.pos[2]+o.z],v:[v.x,v.y,v.z],age:0,life:f.life*(.7+Math.random()*.6),s0:(.35+Math.random()*.25)*f.size,r:.06*f.size,id:Math.random()*100,f:fi});}
+}
+const _gtv=new THREE.Vector3(),gasSoups=new Map();
 function fireStep(dt){
-  if(!R.on){flames.length=0;smokes.length=0;spawnAcc=[];smokeAcc=[];return;}
+  if(!R.on){flames.length=0;smokes.length=0;spawnAcc=[];smokeAcc=[];gasP.length=0;gasAcc=[];return;}
   fireT+=dt;fireFrame++;
   const solidOn=tris.length>0,heavy=tris.length>1500;
   fires.forEach((f,fi)=>{
-    const s=f.size;
+    if(f.gas){gasEmit(f,fi,dt);return;}
+    if(!R.on)return;
+    const s=f.size,fq=new THREE.Quaternion().setFromEuler(new THREE.Euler((f.rot?f.rot[0]:0)*D2R,(f.rot?f.rot[1]:0)*D2R,(f.rot?f.rot[2]:0)*D2R,'XYZ')),fup=new THREE.Vector3(0,0,1).applyQuaternion(fq),tv=new THREE.Vector3(),ru=(x,y,z)=>{tv.set(x,y,z).applyQuaternion(fq);return [tv.x,tv.y,tv.z];};
     spawnAcc[fi]=(spawnAcc[fi]||0)+dt*70*f.inten*s;
     while(spawnAcc[fi]>=1&&flames.length<FMAX){spawnAcc[fi]--;
       const a=Math.random()*6.283,rr=Math.sqrt(Math.random())*.28*s;
-      flames.push({p:[f.pos[0]+Math.cos(a)*rr,f.pos[1]+Math.sin(a)*rr,f.pos[2]+.05],v:[(Math.random()-.5)*.35*s,(Math.random()-.5)*.35*s,(1.1+Math.random()*.9)*s],age:0,life:.7+Math.random()*.7,s0:(.45+Math.random()*.3)*s,r:.06*s,id:Math.random()*100,f:fi});}
+      {const o=ru(Math.cos(a)*rr,Math.sin(a)*rr,.05),vv=ru((Math.random()-.5)*.35*s,(Math.random()-.5)*.35*s,(1.1+Math.random()*.9)*s);flames.push({up:[fup.x,fup.y,fup.z],p:[f.pos[0]+o[0],f.pos[1]+o[1],f.pos[2]+o[2]],v:vv,age:0,life:.7+Math.random()*.7,s0:(.45+Math.random()*.3)*s,r:.06*s,id:Math.random()*100,f:fi});}}
     if(f.smoke){smokeAcc[fi]=(smokeAcc[fi]||0)+dt*22*f.inten*s;
       while(smokeAcc[fi]>=1&&smokes.length<SMAX){smokeAcc[fi]--;
         const a=Math.random()*6.283,rr=Math.sqrt(Math.random())*.25*s;
-        smokes.push({p:[f.pos[0]+Math.cos(a)*rr,f.pos[1]+Math.sin(a)*rr,f.pos[2]+.7*s],v:[(Math.random()-.5)*.3,(Math.random()-.5)*.3,(.8+Math.random()*.5)*s],age:0,life:3+Math.random()*2.5,s0:(.35+Math.random()*.2)*s,r:.1*s,id:Math.random()*100,f:fi});}}
+        {const o=ru(Math.cos(a)*rr,Math.sin(a)*rr,.7*s),vv=ru((Math.random()-.5)*.3,(Math.random()-.5)*.3,(.8+Math.random()*.5)*s);smokes.push({up:[fup.x,fup.y,fup.z],p:[f.pos[0]+o[0],f.pos[1]+o[1],f.pos[2]+o[2]],v:vv,age:0,life:3+Math.random()*2.5,s0:(.35+Math.random()*.2)*s,r:.1*s,id:Math.random()*100,f:fi});}}}
   });
   for(let i=flames.length-1;i>=0;i--){
     const q=flames[i];q.age+=dt;
     if(q.age>=q.life||!fires[q.f]){flames[i]=flames[flames.length-1];flames.pop();continue;}
-    q.v[2]+=1.4*dt;q.v[0]+=Math.sin(fireT*6+q.id)*.9*dt;q.v[1]+=Math.cos(fireT*5.3+q.id*1.3)*.9*dt;
+    {const u=q.up||[0,0,1];q.v[0]+=u[0]*1.4*dt;q.v[1]+=u[1]*1.4*dt;q.v[2]+=u[2]*1.4*dt;}q.v[0]+=Math.sin(fireT*6+q.id)*.9*dt;q.v[1]+=Math.cos(fireT*5.3+q.id*1.3)*.9*dt;
     const d=Math.max(0,1-1.5*dt);q.v[0]*=d;q.v[1]*=d;
     gasMove(q,dt,.1,.5,solidOn&&(!heavy||((i+fireFrame)&1)===0));
   }
   for(let i=smokes.length-1;i>=0;i--){
     const q=smokes[i];q.age+=dt;
     if(q.age>=q.life||!fires[q.f]){smokes[i]=smokes[smokes.length-1];smokes.pop();continue;}
-    q.v[2]+=.35*dt;q.v[0]+=Math.sin(fireT*1.7+q.id)*.5*dt;q.v[1]+=Math.cos(fireT*1.4+q.id*1.7)*.5*dt;
+    {const u=q.up||[0,0,1];q.v[0]+=u[0]*.35*dt;q.v[1]+=u[1]*.35*dt;q.v[2]+=u[2]*.35*dt;}q.v[0]+=Math.sin(fireT*1.7+q.id)*.5*dt;q.v[1]+=Math.cos(fireT*1.4+q.id*1.7)*.5*dt;
     const d=Math.max(0,1-.6*dt);q.v[0]*=d;q.v[1]*=d;q.v[2]=Math.min(q.v[2],1.3);
     gasMove(q,dt,.05,.7,solidOn&&(!heavy||((i+fireFrame)&1)===0));
   }
+  gasSoups.clear();
+  for(let i=gasP.length-1;i>=0;i--){
+    const q=gasP[i],f=fires[q.f];q.age+=dt;
+    if(q.age>=q.life||!f||!f.gas){gasP[i]=gasP[gasP.length-1];gasP.pop();continue;}
+    q.v[2]+=f.lift*dt;
+    q.v[0]+=Math.sin(fireT*2+q.id)*.35*dt;q.v[1]+=Math.cos(fireT*1.7+q.id*1.3)*.35*dt;q.v[2]+=Math.sin(fireT*1.9+q.id*.7)*.2*dt;
+    const d=Math.max(0,1-.3*dt);q.v[0]*=d;q.v[1]*=d;q.v[2]*=d;
+    q.hit=0;
+    gasMove(q,dt,.1,0,solidOn&&(!heavy||((i+fireFrame)&1)===0));
+    if(PH&&PH.bodies&&PH.bodies.length){
+      for(let bi=0;bi<PH.bodies.length;bi++){
+        const b=PH.bodies[bi],m=b.rad+.15;
+        if(Math.abs(q.p[0]-b.pos.x)>m||Math.abs(q.p[1]-b.pos.y)>m||Math.abs(q.p[2]-b.pos.z)>m)continue;
+        if(!gasSoups.has(b))gasSoups.set(b,phBodySoup(b));
+        const r=phProbe(q.p[0],q.p[1],q.p[2],gasSoups.get(b));if(!r)continue;
+        const nx=r[0],ny=r[1],nz=r[2],push=r[3]+.01;
+        q.p[0]+=nx*push;q.p[1]+=ny*push;q.p[2]+=nz*push;
+        const rx=q.p[0]-b.pos.x,ry=q.p[1]-b.pos.y,rz=q.p[2]-b.pos.z,
+          bvx=b.v.x+b.w.y*rz-b.w.z*ry,bvy=b.v.y+b.w.z*rx-b.w.x*rz,bvz=b.v.z+b.w.x*ry-b.w.y*rx,
+          vn=(q.v[0]-bvx)*nx+(q.v[1]-bvy)*ny+(q.v[2]-bvz)*nz;
+        if(vn<0){q.v[0]-=1.1*vn*nx;q.v[1]-=1.1*vn*ny;q.v[2]-=1.1*vn*nz;}
+        _fgn.set(nx,ny,nz);q.hit=1;
+      }
+    }
+    if(q.hit){
+      _gtv.set(Math.random()-.5,Math.random()-.5,Math.random()-.5);_gtv.addScaledVector(_fgn,-_gtv.dot(_fgn));
+      if(_gtv.lengthSq()>1e-6){_gtv.normalize().multiplyScalar(f.spread*(.3+.7*Math.random())*Math.max(.6,f.speed)*.6);
+        q.v[0]+=_gtv.x;q.v[1]+=_gtv.y;q.v[2]+=_gtv.z;}
+    }
+  }
 }
 function fireWrite(){
+  gasPts.visible=!!R.on;
+  {const g=gasPts.geometry,P=g.attributes.position.array,S=g.attributes.size.array,C=g.attributes.col.array,cc=fires.map(f=>f.gas?new THREE.Color(f.color):null);
+    gasP.forEach((q,i)=>{const t=q.age/q.life,c=cc[q.f]||new THREE.Color(1,1,1);
+      P[i*3]=q.p[0];P[i*3+1]=q.p[1];P[i*3+2]=q.p[2];S[i]=q.s0*(1+t*1.8);
+      C[i*4]=c.r;C[i*4+1]=c.g;C[i*4+2]=c.b;C[i*4+3]=Math.min(1,t*8)*(1-t)*.5;});
+    g.setDrawRange(0,gasP.length);['position','size','col'].forEach(n=>g.attributes[n].needsUpdate=true);}
   let g=flamePts.geometry,P=g.attributes.position.array,S=g.attributes.size.array,C=g.attributes.col.array;
   flames.forEach((q,i)=>{
     const t=q.age/q.life;P[i*3]=q.p[0];P[i*3+1]=q.p[1];P[i*3+2]=q.p[2];
@@ -3479,14 +3556,14 @@ function fireWrite(){
     C[i*4]=c;C[i*4+1]=c;C[i*4+2]=c;C[i*4+3]=Math.min(1,t*6)*(1-t)*.4;
   });
   g.setDrawRange(0,smokes.length);['position','size','col'].forEach(n=>g.attributes[n].needsUpdate=true);
-  const lf=fires[fpi>=0?fpi:0];
+  const lf=fires.find(f=>!f.gas);
   if(lf&&R.on){fireLight.visible=true;fireLight.position.set(lf.pos[0],lf.pos[1],lf.pos[2]+.8*lf.size);fireLight.intensity=(1.6+Math.sin(fireT*17)*.25+Math.sin(fireT*7.3)*.2)*lf.inten*lf.size;fireLight.distance=6*lf.size;}
   else fireLight.visible=false;
 }
 let fireLast=0;
 function fireLoop(t){
   fireRaf=0;
-  if(!R.on||!fires.length){flames.length=0;smokes.length=0;fireWrite();requestRender();return;}
+  if(!R.on||!fires.length){flames.length=0;smokes.length=0;gasP.length=0;fireWrite();requestRender();return;}
   const dt=Math.min(1/20,Math.max(.001,(t-fireLast)/1000||1/60));fireLast=t;
   fireStep(dt);fireWrite();requestRender();
   fireRaf=requestAnimationFrame(fireLoop);
@@ -3495,21 +3572,34 @@ function fireKick(){if(!fireRaf){fireLast=performance.now();fireRaf=requestAnima
 function curFire(){return fpi>=0?(fires[fpi]||null):null;}
 function updateFireUI(){
   const sel=$('fr_sel');
-  if(sel.options.length!==fires.length){sel.innerHTML='';fires.forEach((_,i)=>{const o=document.createElement('option');o.value=i;o.textContent='Fire '+(i+1);sel.appendChild(o);});}
+  if(sel.options.length!==fires.length){sel.innerHTML='';fires.forEach((_,i)=>{const o=document.createElement('option');o.value=i;o.textContent=(fires[i].gas?'Gas ':'Fire ')+(i+1);sel.appendChild(o);});}
   const f=curFire();
-  $('fr_info').textContent=f?'Fire '+(fpi+1)+' of '+fires.length:'No fire yet. Add > Miscellaneous > Fire';
+  $('fr_info').textContent=f?(f.gas?'Gas ':'Fire ')+(fpi+1)+' of '+fires.length:'No fire yet. Add > Miscellaneous > Fire';
   if(f){sel.value=fpi;$('fr_smoke').checked=f.smoke;$('fr_size').value=f.size;$('fr_int').value=f.inten;
     ['x','y','z'].forEach((k,j)=>{if(document.activeElement!==$('fr_'+k))$('fr_'+k).value=Math.round(f.pos[j]*1000)/1000;});}
   ['fr_sel','fr_smoke','fr_size','fr_int','fr_x','fr_y','fr_z','fr_del'].forEach(id=>{$(id).disabled=!f;});
+  if(f&&f.gas){$('fr_smoke').disabled=true;$('fr_int').disabled=true;}
+  const gs=!!(f&&f.gas);
+  $('ga_info').textContent=gs?'Gas '+(fpi+1)+' of '+fires.length:'Select a gas (Add > Miscellaneous > Gas). Rotate it with the Rotate gizmo to aim it. Two arrows show how it spreads; the gas itself only shows in Render mode.';
+  GA_IDS.forEach(([id,k])=>{const e=$(id);e.disabled=!gs;if(gs)e.value=f[k];});
+}
+const GA_IDS=[['ga_col','color'],['ga_speed','speed'],['ga_cone','cone'],['ga_dens','dens'],['ga_size','size'],['ga_life','life'],['ga_lift','lift'],['ga_spread','spread']];
+GA_IDS.forEach(([id,k])=>$(id).addEventListener('input',e=>{const f=curFire();if(!f||!f.gas)return;
+  f[k]=k==='color'?e.target.value:+e.target.value;saveFires();if(k==='size'||k==='cone'||k==='speed')syncFireIcons();fireKick();requestRender();}));
+function addGas(){
+  const f=Object.assign({pos:[Math.round(view.target.x*2)/2,Math.round(view.target.y*2)/2,0],smoke:false,size:1,inten:1,rot:[0,0,0]},gasNorm({}));
+  fires.push(f);saveFires();selectFire(fires.length-1);fireKick();
+  const d=$('gasPanel');if(d)d.open=true;flash('Added gas (flows in Render mode)');
 }
 function addFire(){
-  const f={pos:[Math.round(view.target.x*2)/2,Math.round(view.target.y*2)/2,0],smoke:false,size:1,inten:1};
+  const f={pos:[Math.round(view.target.x*2)/2,Math.round(view.target.y*2)/2,0],smoke:false,size:1,inten:1,rot:[0,0,0]};
   fires.push(f);saveFires();selectFire(fires.length-1);fireKick();
   const d=$('firePanel');if(d)d.open=true;flash('Added fire (burns in Render mode)');
 }
 function delFire(){
   const k=selF>=0?selF:fpi;if(k<0||!fires[k])return;
-  fires.splice(k,1);spawnAcc=[];smokeAcc=[];
+  fires.splice(k,1);spawnAcc=[];smokeAcc=[];gasAcc=[];
+  gasP=gasP.filter(q=>q.f!==k);gasP.forEach(q=>{if(q.f>k)q.f--;});
   flames=flames.filter(q=>q.f!==k);smokes=smokes.filter(q=>q.f!==k);flames.forEach(q=>{if(q.f>k)q.f--;});smokes.forEach(q=>{if(q.f>k)q.f--;});
   selF=-1;fpi=fires.length?Math.min(k,fires.length-1):-1;saveFires();syncFireIcons();updateFireUI();fireKick();requestRender();
 }
@@ -3526,13 +3616,23 @@ function fireSel(){return selF>=0&&!!fires[selF]&&!selV.size&&selL<0&&selB<0;}
 function syncFireIcons(){
   while(fireIcons.children.length){const c=fireIcons.children[0];fireIcons.remove(c);c.geometry.dispose();c.material.dispose();}
   fires.forEach((f,i)=>{
+    if(f.gas){const gp=[],n=12,rr=.18,L=Math.min(2.2,.8+f.speed*.15),ca=Math.min(80,Math.max(12,f.cone))*D2R,hs=.16;
+      for(let k=0;k<n;k++){const a=k/n*6.2832,b=(k+1)/n*6.2832;gp.push(Math.cos(a)*rr,Math.sin(a)*rr,0,Math.cos(b)*rr,Math.sin(b)*rr,0);}
+      /* two arrows fanning out from the source at +/- the cone angle: where the gas spreads */
+      [-1,1].forEach(sg=>{const dx=Math.sin(ca)*sg,dz=Math.cos(ca),ex=dx*L,ez=dz*L,px=dz,pz=-dx;
+        gp.push(0,0,0,ex,0,ez);
+        gp.push(ex,0,ez,ex-dx*hs+px*hs*.6,0,ez-dz*hs+pz*hs*.6,ex,0,ez,ex-dx*hs-px*hs*.6,0,ez-dz*hs-pz*hs*.6);
+        gp.push(ex,0,ez,ex-dx*hs,hs*.6,ez-dz*hs,ex,0,ez,ex-dx*hs,-hs*.6,ez-dz*hs);});
+      const gg=new THREE.BufferGeometry();gg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(gp),3));
+      const gl=new THREE.LineSegments(gg,new THREE.LineBasicMaterial({color:i===selF&&fireSel()?0xf0a030:0x38b6ff,depthTest:false}));
+      gl.renderOrder=12;if(f.rot)gl.rotation.set(f.rot[0]*D2R,f.rot[1]*D2R,f.rot[2]*D2R,'XYZ');gl.position.fromArray(f.pos);gl.scale.setScalar(f.size);fireIcons.add(gl);return;}
     const pos=[],prof=[[0,.02],[.16,.12],[.2,.3],[.11,.55],[0,.85]];
     for(let k=0;k<prof.length-1;k++){const a=prof[k],b=prof[k+1];
       pos.push(a[0],0,a[1],b[0],0,b[1],-a[0],0,a[1],-b[0],0,b[1],0,a[0],a[1],0,b[0],b[1],0,-a[0],a[1],0,-b[0],b[1]);}
     for(let k=0;k<20;k++){const a=k/20*6.2832,b=(k+1)/20*6.2832;pos.push(Math.cos(a)*.22,Math.sin(a)*.22,0,Math.cos(b)*.22,Math.sin(b)*.22,0);}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
     const ln=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:i===selF&&fireSel()?0xf0a030:0xff5a1e,depthTest:false}));
-    ln.renderOrder=12;ln.position.fromArray(f.pos);ln.scale.setScalar(f.size);fireIcons.add(ln);
+    ln.renderOrder=12;if(f.rot)ln.rotation.set(f.rot[0]*D2R,f.rot[1]*D2R,f.rot[2]*D2R,'XYZ');ln.position.fromArray(f.pos);ln.scale.setScalar(f.size);fireIcons.add(ln);
   });
   requestRender();
 }
