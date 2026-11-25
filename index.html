@@ -1368,7 +1368,7 @@ $('snapSize').addEventListener('change',e=>{snapSize=parseFloat(e.target.value)|
 /* ---------- menus ---------- */
 const MENUS={
   File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export']],
-  Edit:[['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Shift+Z'],null,['Copy','copy','Ctrl+C'],['Paste','paste','Ctrl+V'],['Duplicate','dup','Ctrl+D'],['Scale','scale','S'],null,['Delete','del','Del'],['Flip Normals','flip'],['Subdivide','subdiv'],['Merge at Center','merge']],
+  Edit:[['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Shift+Z'],null,['Copy','copy','Ctrl+C'],['Paste','paste','Ctrl+V'],['Duplicate','dup','Ctrl+D'],['Scale','scale'],null,['Delete','del','Del'],['Flip Normals','flip'],['Subdivide','subdiv'],['Merge at Center','merge']],
   Add:[['Triangle','add:tri'],['Quad','add:quad'],['Cube','add:cube'],['Pyramid','add:pyr'],['Octahedron','add:oct'],['Light','add:light']],
   Select:[['All','selall','A'],['None','selnone','Alt+A'],['Invert','selinv','Ctrl+I'],['Linked (Object)','linked','L']],
   View:[['Frame Selected','frame','F'],['Front','view:front','Num 1'],['Right','view:right','Num 3'],['Top','view:top','Num 7'],['Persp / Ortho','ortho','Num 5'],['Solid / Wire','wire','Z'],['Render Preview','render'],['Save Render...','saverender']]
@@ -1524,8 +1524,6 @@ document.addEventListener('keydown',e=>{
     case 'KeyY':setTool('scale');break;
     case 'KeyP':setTool('paint');break;
     case 'KeyB':setTool('bucket');break;
-    case 'KeyG':startGrab();break;
-    case 'KeyS':startScale();break;
     case 'BracketRight':stepScale(e.shiftKey?2:1.1);break;
     case 'BracketLeft':stepScale(e.shiftKey?0.5:1/1.1);break;
     case 'KeyL':selectLinked();break;
