@@ -226,8 +226,8 @@ dd{margin:0;color:var(--fg-dim)}
       <dt>Z</dt><dd>Solid / Wire</dd>
       <dt>F</dt><dd>Frame selection</dd>
       <dt>Ctrl+Z</dt><dd>Undo (Shift: redo)</dd>
-      <dt>Right drag</dt><dd>Orbit (Shift: pan)</dd>
-      <dt>Right drag + W A S D</dt><dd>Fly camera (E up, Q down, Shift faster)</dd>
+      <dt>Right drag</dt><dd>Orbit (Shift: free look)</dd>
+      <dt>Right drag + W A S D</dt><dd>Fly camera (E up, Q down, Shift slower)</dd>
       <dt>Arrows, PgUp, PgDn</dt><dd>Move camera (forward, back, sideways, up, down)</dd>
       <dt>Wheel</dt><dd>Zoom</dd>
     </dl></div></details>
@@ -606,6 +606,14 @@ const solid=new THREE.Mesh(emptyGeom(),new THREE.MeshLambertMaterial({color:0xff
 const faceSel=new THREE.Mesh(emptyGeom(),new THREE.MeshBasicMaterial({color:0xf0a030,transparent:true,opacity:0.38,side:THREE.DoubleSide,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));
 const edges=new THREE.LineSegments(emptyGeom(),new THREE.LineBasicMaterial({vertexColors:true}));
 const points=new THREE.Points(emptyGeom(),ptMat(8));
+points.material.depthTest=true;points.material.depthWrite=false;
+/* nudge each dot toward the camera (depth only) so tilted surfaces under a dot don't cut it in half */
+const dotPull={value:0};
+points.material.onBeforeCompile=sh=>{
+  sh.uniforms.uPull=dotPull;
+  sh.vertexShader=sh.vertexShader.replace('void main() {','uniform float uPull;\nvoid main() {').replace('#include <project_vertex>','#include <project_vertex>\n  gl_Position.z+=projectionMatrix[2][2]*uPull;');
+};
+function updateDotPull(){const hh=view.dist*Math.tan(persp.fov*Math.PI/360);dotPull.value=(2*hh/Math.max(1,H))*points.material.size*1.5;}
 [solid,faceSel,edges,points].forEach(o=>{o.frustumCulled=false;scene.add(o);});
 points.renderOrder=10;
 
@@ -822,7 +830,7 @@ function stepScale(f){
 
 /* ---------- dots, lights ---------- */
 const D2R=Math.PI/180,LTDEF={spot:6,point:6,sun:1.5};
-$('dotSize').addEventListener('input',e=>{points.material.size=parseFloat(e.target.value)||0;requestRender();});
+$('dotSize').addEventListener('input',e=>{points.material.size=parseFloat(e.target.value)||0;updateDotPull();requestRender();});
 function cleanLight(l){
   if(!l||!Array.isArray(l.pos)||l.pos.length!==3||!l.pos.every(Number.isFinite))return null;
   return {type:['spot','point','sun'].includes(l.type)?l.type:'spot',pos:l.pos.slice(),
@@ -943,11 +951,11 @@ function updateXform(x,y){
     sc=Math.max(0.01,sc);if(snapOn)sc=Math.max(0.05,Math.round(sc*20)/20);
     if(!mv.pushed){pushUndo();mv.pushed=true;}
     const org=mv.origin.clone();
-    if(mv.ctrl&&mv.orig.length){
+    if((mv.ctrl||(mv.shift&&!mv.msc))&&mv.orig.length){
       const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
       mv.orig.forEach(o=>{for(let k=0;k<3;k++){if(o.p[k]<mn[k])mn[k]=o.p[k];if(o.p[k]>mx[k])mx[k]=o.p[k];}});
       const ks=mv.msc?['x','y','z'].map(a=>mv.lock?(mv.excl?a!==mv.lock:a===mv.lock):true):mv.uniform?[true,true,true]:['x','y','z'].map(a=>AX[a]===mv.axisVec);
-      ks.forEach((on,k)=>{if(on)org.setComponent(k,mv.neg?mx[k]:mn[k]);});
+      ks.forEach((on,k)=>{if(on)org.setComponent(k,mv.ctrl?(mv.neg?mx[k]:mn[k]):(mn[k]+mx[k])/2);});
     }
     mv.orig.forEach(o=>{
       const d=new THREE.Vector3(o.p[0],o.p[1],o.p[2]).sub(org);
@@ -995,10 +1003,11 @@ function updateCamera(){
   const s=Math.sin(view.phi),c=Math.cos(view.phi);
   const off=new THREE.Vector3(s*Math.cos(view.theta),s*Math.sin(view.theta),c).multiplyScalar(view.dist);
   const aspect=W/H,hh=view.dist*Math.tan(persp.fov*Math.PI/360);
-  persp.aspect=aspect;persp.updateProjectionMatrix();
-  ortho.left=-hh*aspect;ortho.right=hh*aspect;ortho.top=hh;ortho.bottom=-hh;ortho.updateProjectionMatrix();
+  persp.aspect=aspect;persp.near=Math.max(0.1,view.dist*0.001);persp.far=Math.max(400,view.dist*200);persp.updateProjectionMatrix();
+  ortho.left=-hh*aspect;ortho.right=hh*aspect;ortho.top=hh;ortho.bottom=-hh;ortho.near=-Math.max(500,view.dist*200);ortho.far=Math.max(500,view.dist*200);ortho.updateProjectionMatrix();
   [persp,ortho].forEach(cam=>{cam.position.copy(view.target).add(off);cam.up.set(0,0,1);cam.lookAt(view.target);cam.updateMatrixWorld(true);});
   camera=view.ortho?ortho:persp;
+  updateDotPull();
 }
 let rafId=0;
 function requestRender(){if(!rafId)rafId=requestAnimationFrame(()=>{rafId=0;render();});}
@@ -1009,6 +1018,12 @@ function render(){
 }
 function applyNav(kind,dx,dy){
   if(kind==='orbit'){view.theta-=dx*0.008;view.phi=Math.min(Math.PI-0.001,Math.max(0.001,view.phi-dy*0.008));view.name='User';}
+  else if(kind==='look'){
+    const s0=Math.sin(view.phi),c0=Math.cos(view.phi),px=view.target.x+s0*Math.cos(view.theta)*view.dist,py=view.target.y+s0*Math.sin(view.theta)*view.dist,pz=view.target.z+c0*view.dist;
+    view.theta-=dx*0.004;view.phi=Math.min(Math.PI-0.001,Math.max(0.001,view.phi-dy*0.004));view.name='User';
+    const s1=Math.sin(view.phi),c1=Math.cos(view.phi);
+    view.target.set(px-s1*Math.cos(view.theta)*view.dist,py-s1*Math.sin(view.theta)*view.dist,pz-c1*view.dist);
+  }
   else if(kind==='pan'){
     const hh=view.dist*Math.tan(persp.fov*Math.PI/360),wpp=2*hh/H,e=camera.matrixWorld.elements;
     view.target.x+=(-dx*e[0]+dy*e[4])*wpp;view.target.y+=(-dx*e[1]+dy*e[5])*wpp;view.target.z+=(-dx*e[2]+dy*e[6])*wpp;
@@ -1406,7 +1421,7 @@ const HINTS={
   texture:'Texture: click a flat face to apply the image or spritesheet cell chosen in the Texture panel. Use the panel button for a whole selection.'
 };
 function updateHint(){
-  $('hint').textContent=flashMsg||(R.on?'Render preview: drag to orbit (Shift pan), wheel to zoom, arrow keys or WASD while dragging to fly. Adjust the Render panel, then Save image.':mv&&mv.modal?(mv.msc?'Scale: move the mouse, click or Enter to confirm, Esc to cancel. X, Y, Z resize one axis, Shift+X, Y, Z skip that axis.':'Grab: move the mouse, click or Enter to confirm, Esc to cancel. X, Y, Z lock an axis.'):HINTS[tool]);
+  $('hint').textContent=flashMsg||(R.on?'Render preview: drag to orbit (Shift free look, slower), wheel to zoom, arrow keys or WASD while dragging to fly. Adjust the Render panel, then Save image.':mv&&mv.modal?(mv.msc?'Scale: move the mouse, click or Enter to confirm, Esc to cancel. X, Y, Z resize one axis, Shift+X, Y, Z skip that axis.':'Grab: move the mouse, click or Enter to confirm, Esc to cancel. X, Y, Z lock an axis.'):HINTS[tool]);
 }
 function flash(m){flashMsg=m;updateHint();clearTimeout(flashT);flashT=setTimeout(()=>{flashMsg='';updateHint();},2600);}
 function updateInfo(){
@@ -1447,7 +1462,7 @@ vp.addEventListener('pointerdown',e=>{
   const p=local(e);lastMouse=p;
   if(mv&&mv.modal){endMove(e.button===0);e.preventDefault();return;}
   if(e.button===1||e.button===2||(e.button===0&&(e.altKey||R.on))){
-    drag={kind:e.shiftKey?'pan':'orbit',lx:e.clientX,ly:e.clientY,button:e.button,moved:false};
+    drag={kind:'orbit',lx:e.clientX,ly:e.clientY,button:e.button,moved:false};
     vp.setPointerCapture(e.pointerId);e.preventDefault();return;
   }
   if(e.button!==0)return;
@@ -1479,10 +1494,10 @@ vp.addEventListener('pointerdown',e=>{
 vp.addEventListener('pointermove',e=>{
   if(e.target.closest('#gizmo'))return;
   const p=local(e);lastMouse=p;
-  if(mv)mv.ctrl=e.ctrlKey||e.metaKey;
+  if(mv){mv.ctrl=e.ctrlKey||e.metaKey;mv.shift=e.shiftKey;}
   if(mv&&mv.modal){updateMove(p.x,p.y);return;}
   if(drag){
-    if(drag.kind==='orbit'||drag.kind==='pan'){applyNav(drag.kind,e.clientX-drag.lx,e.clientY-drag.ly);drag.lx=e.clientX;drag.ly=e.clientY;drag.moved=true;return;}
+    if(drag.kind==='orbit'||drag.kind==='pan'){applyNav(drag.kind==='orbit'&&e.shiftKey?'look':drag.kind,e.clientX-drag.lx,e.clientY-drag.ly);drag.lx=e.clientX;drag.ly=e.clientY;drag.moved=true;return;}
     if(drag.kind==='paint'){strokeTo(p.x,p.y,drag);return;}
     if(drag.kind==='gizmo'){updateMove(p.x,p.y);return;}
     if(drag.kind==='click'&&Math.hypot(p.x-drag.sx,p.y-drag.sy)>4){
@@ -1551,7 +1566,7 @@ $('snapSize').addEventListener('change',e=>{snapSize=parseFloat(e.target.value)|
 
 /* ---------- menus ---------- */
 const MENUS={
-  File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export']],
+  File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export'],['Import FBX...','importfbx'],['Export FBX...','exportfbx']],
   Edit:[['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Shift+Z'],null,['Copy','copy','Ctrl+C'],['Paste','paste','Ctrl+V'],['Duplicate','dup','Ctrl+D'],['Scale','scale'],null,['Delete','del','Del'],['Flip Normals','flip'],['Subdivide','subdiv'],['Merge at Center','merge']],
   Add:[['Triangle','add:tri'],['Quad','add:quad'],['Cube','add:cube'],['Pyramid','add:pyr'],['Octahedron','add:oct'],['Light','add:light']],
   Select:[['All','selall','A'],['None','selnone','Alt+A'],['Invert','selinv','Ctrl+I'],['Linked (Object)','linked','L']],
@@ -1561,7 +1576,7 @@ function run(a){
   if(a==='add:light')return addLight();
   if(a.indexOf('add:')===0)return addPrim(a.slice(4));
   if(a.indexOf('view:')===0)return setView(a.slice(5));
-  const f={new:newMesh,import:importOBJ,export:exportOBJ,undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
+  const f={new:newMesh,import:importOBJ,export:exportOBJ,importfbx:importFBX,exportfbx:exportFBX,undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
   if(f)f();
 }
 let openWrap=null;
@@ -1732,7 +1747,7 @@ function parseMTL(text){
 }
 function importOBJ(){
   const inp=document.createElement('input');inp.type='file';inp.multiple=true;
-  inp.accept='.obj,.mtl,.zip,.png,.jpg,.jpeg,.gif,.webp,.bmp,text/plain,image/*';
+  inp.accept='.obj,.mtl,.zip,.png,.jpg,.jpeg,.gif,.webp,.bmp';
   inp.addEventListener('change',async()=>{
     const fl=[...inp.files];if(!fl.length)return;
     try{
@@ -1770,6 +1785,369 @@ function importOBJ(){
   });
   inp.click();
 }
+/* ---------- FBX import and export (binary 7.4 out; binary and ASCII in) ---------- */
+const FBX_MAGIC='Kaydara FBX Binary  ';
+async function fbxInflate(u8){
+  const st=new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate'));
+  return new Uint8Array(await new Response(st).arrayBuffer());
+}
+async function parseFBXBinary(buf){
+  const dv=new DataView(buf),u8=new Uint8Array(buf),dec=new TextDecoder(),ver=dv.getUint32(23,true),big=ver>=7500;
+  const hs=big?25:13;
+  async function readNode(p){
+    let end,np,pl,nl;
+    if(big){end=Number(dv.getBigUint64(p,true));np=Number(dv.getBigUint64(p+8,true));pl=Number(dv.getBigUint64(p+16,true));nl=dv.getUint8(p+24);}
+    else{end=dv.getUint32(p,true);np=dv.getUint32(p+4,true);pl=dv.getUint32(p+8,true);nl=dv.getUint8(p+12);}
+    if(end===0)return null;
+    const node={name:dec.decode(u8.subarray(p+hs,p+hs+nl)),props:[],children:[]};
+    let q=p+hs+nl;
+    for(let i=0;i<np;i++){
+      const t=String.fromCharCode(dv.getUint8(q));q++;
+      if(t==='Y'){node.props.push(dv.getInt16(q,true));q+=2;}
+      else if(t==='C'){node.props.push(dv.getUint8(q)!==0);q+=1;}
+      else if(t==='I'){node.props.push(dv.getInt32(q,true));q+=4;}
+      else if(t==='F'){node.props.push(dv.getFloat32(q,true));q+=4;}
+      else if(t==='D'){node.props.push(dv.getFloat64(q,true));q+=8;}
+      else if(t==='L'){node.props.push(Number(dv.getBigInt64(q,true)));q+=8;}
+      else if(t==='S'){const n=dv.getUint32(q,true);node.props.push(dec.decode(u8.subarray(q+4,q+4+n)));q+=4+n;}
+      else if(t==='R'){const n=dv.getUint32(q,true);node.props.push(u8.slice(q+4,q+4+n));q+=4+n;}
+      else if('fdlib'.indexOf(t)>=0){
+        const len=dv.getUint32(q,true),enc=dv.getUint32(q+4,true),cl=dv.getUint32(q+8,true);q+=12;
+        let raw=u8.subarray(q,q+cl);q+=cl;
+        if(enc===1)raw=await fbxInflate(raw);
+        const sz={f:4,d:8,l:8,i:4,b:1}[t],ab=new ArrayBuffer(len*sz),tmp=new Uint8Array(ab);tmp.set(raw.subarray(0,len*sz));
+        const v=new DataView(ab),arr=new Array(len);
+        for(let k=0;k<len;k++){
+          arr[k]=t==='f'?v.getFloat32(k*4,true):t==='d'?v.getFloat64(k*8,true):t==='l'?Number(v.getBigInt64(k*8,true)):t==='i'?v.getInt32(k*4,true):v.getUint8(k);
+        }
+        node.props.push(arr);
+      }else throw new Error('Bad FBX property');
+    }
+    q=p+hs+nl+pl;
+    while(q<end){
+      const c=await readNode(q);
+      if(c===null){q+=hs;break;}
+      node.children.push(c);
+      q=big?Number(dv.getBigUint64(q,true)):dv.getUint32(q,true);
+    }
+    return node;
+  }
+  const root={name:'',props:[],children:[]};
+  let p=27;
+  while(p<buf.byteLength-hs){
+    const c=await readNode(p);
+    if(c===null)break;
+    root.children.push(c);
+    p=big?Number(dv.getBigUint64(p,true)):dv.getUint32(p,true);
+  }
+  return root;
+}
+function parseFBXAscii(text){
+  const root={name:'',props:[],children:[]},stack=[root];
+  const val=s=>{
+    s=s.trim();if(!s)return null;
+    if(s[0]==='"')return s.slice(1,s.lastIndexOf('"'));
+    const n=Number(s);return Number.isFinite(n)&&/^[-+0-9.]/.test(s)?n:s;
+  };
+  const splitVals=s=>{
+    const out=[];let cur='',q=false;
+    for(const ch of s){if(ch==='"')q=!q;if(ch===','&&!q){out.push(cur);cur='';}else cur+=ch;}
+    out.push(cur);return out.map(val).filter(v=>v!==null);
+  };
+  text.split(/\r?\n/).forEach(raw=>{
+    let line=raw.trim();if(!line||line[0]===';')return;
+    const cur=stack[stack.length-1];
+    if(cur.arrText!==undefined){
+      if(line==='}'){
+        cur.props=[cur.arrText.split(',').map(s=>s.trim()).filter(Boolean).map(Number)];delete cur.arrText;stack.pop();
+      }else cur.arrText+=line.replace(/^a:\s*/,'')+(line.endsWith(',')?'':',');
+      return;
+    }
+    if(line==='}'){if(stack.length>1)stack.pop();return;}
+    const m=/^([^:\s"]+)\s*:\s*(.*)$/.exec(line);if(!m)return;
+    let rest=m[2],open=false;
+    if(rest.endsWith('{')){open=true;rest=rest.slice(0,-1).trim();}
+    const node={name:m[1],props:[],children:[]};
+    if(rest[0]==='*'){node.arrText='';}
+    else node.props=splitVals(rest);
+    cur.children.push(node);
+    if(open)stack.push(node);
+  });
+  return root;
+}
+function fbxKids(n,name){return n?n.children.filter(c=>c.name===name):[];}
+function fbxKid(n,name){return n?n.children.find(c=>c.name===name):undefined;}
+function fbxProp(n,key){
+  const p=fbxKid(n,'Properties70');if(!p)return null;
+  const r=p.children.find(c=>c.name==='P'&&c.props[0]===key);return r?r.props.slice(4):null;
+}
+function fbxSniff(b){
+  if(b[0]===0x89&&b[1]===0x50)return 'image/png';
+  if(b[0]===0xff&&b[1]===0xd8)return 'image/jpeg';
+  if(b[0]===0x47&&b[1]===0x49)return 'image/gif';
+  if(b[0]===0x42&&b[1]===0x4d)return 'image/bmp';
+  if(b[0]===0x52&&b[1]===0x49&&b[8]===0x57)return 'image/webp';
+  return null;
+}
+function importFBX(){
+  const inp=document.createElement('input');inp.type='file';inp.multiple=true;
+  inp.accept='.fbx';
+  inp.addEventListener('change',async()=>{
+    const fl=[...inp.files];if(!fl.length)return;
+    try{
+      const ff=fl.find(f=>extOf(f.name)==='fbx');
+      if(!ff){flash('No .fbx file found');return;}
+      const buf=await ff.arrayBuffer(),head=new TextDecoder().decode(new Uint8Array(buf,0,20));
+      const root=head===FBX_MAGIC?await parseFBXBinary(buf):parseFBXAscii(new TextDecoder().decode(buf));
+      const picE={};
+      for(const f of fl){if(MIMES[extOf(f.name)])picE[baseName(f.name).toLowerCase()]={name:f.name,bytes:new Uint8Array(await f.arrayBuffer())};}
+      const objs=fbxKid(root,'Objects');if(!objs)throw new Error('no objects');
+      const byId={};
+      objs.children.forEach(n=>{if(typeof n.props[0]==='number')byId[n.props[0]]=n;});
+      const conns=fbxKids(fbxKid(root,'Connections'),'C').map(c=>({t:c.props[0],a:c.props[1],b:c.props[2],p:c.props[3]}));
+      const kidsOf=(id,kind)=>conns.filter(c=>c.b===id&&byId[c.a]&&byId[c.a].name===kind);
+      const parentOf={};conns.forEach(c=>{if(byId[c.a]&&byId[c.a].name==='Model'&&byId[c.b]&&byId[c.b].name==='Model')parentOf[c.a]=c.b;});
+      const num=(a,i,d)=>a&&Number.isFinite(a[i])?a[i]:d;
+      const rad=Math.PI/180,matCache={};
+      const local=id=>{
+        const m=byId[id],T=fbxProp(m,'Lcl Translation')||[0,0,0],R=fbxProp(m,'Lcl Rotation')||[0,0,0],S=fbxProp(m,'Lcl Scaling')||[1,1,1];
+        const pre=fbxProp(m,'PreRotation'),post=fbxProp(m,'PostRotation'),ro=fbxProp(m,'RotationOrder');
+        const ordN=ro?ro[0]:0,ord=['ZYX','YZX','XZY','ZXY','YXZ','XYZ'][ordN]||'ZYX';
+        const mt=new THREE.Matrix4().makeTranslation(num(T,0,0),num(T,1,0),num(T,2,0));
+        const mr=new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(num(R,0,0)*rad,num(R,1,0)*rad,num(R,2,0)*rad,ord));
+        const ms=new THREE.Matrix4().makeScale(num(S,0,1),num(S,1,1),num(S,2,1));
+        let out=mt.clone();
+        if(pre)out.multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(num(pre,0,0)*rad,num(pre,1,0)*rad,num(pre,2,0)*rad,'ZYX')));
+        out.multiply(mr);
+        if(post)out.multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(num(post,0,0)*rad,num(post,1,0)*rad,num(post,2,0)*rad,'ZYX')).invert());
+        return out.multiply(ms);
+      };
+      const world=id=>{let m=local(id),p=parentOf[id],n=0;while(p!==undefined&&byId[p]&&n++<64){m=local(p).multiply(m);p=parentOf[p];}return m;};
+      const gs=fbxKid(root,'GlobalSettings'),up=fbxProp(gs,'UpAxis'),upS=fbxProp(gs,'UpAxisSign'),fr=fbxProp(gs,'FrontAxis'),frS=fbxProp(gs,'FrontAxisSign');
+      const upAxis=up?up[0]:1,upSign=upS?upS[0]:1;
+      let G=new THREE.Matrix4();
+      if(upAxis===1){G.set(1,0,0,0, 0,0,-1,0, 0,1,0,0, 0,0,0,1);if(upSign<0)G.premultiply(new THREE.Matrix4().makeScale(1,1,-1));}
+      else if(upAxis===0){G.set(0,0,1,0, 1,0,0,0, 0,1,0,0, 0,0,0,1);}
+      const imgFor=async mat=>{
+        const tc=conns.find(c=>c.b===mat&&byId[c.a]&&byId[c.a].name==='Texture'&&c.p==='DiffuseColor')||conns.find(c=>c.b===mat&&byId[c.a]&&byId[c.a].name==='Texture');
+        if(!tc)return -1;
+        const tex=byId[tc.a],vid=kidsOf(tex.props[0],'Video')[0],vn=vid&&byId[vid.a];
+        const fn=x=>{const f=fbxKid(x,'RelativeFilename'),g=fbxKid(x,'FileName');return (f&&f.props[0])||(g&&g.props[0])||'';};
+        const name=baseName(fn(tex)||fn(vn)||'texture.png');
+        const content=vn&&fbxKid(vn,'Content');let bytes=null,mime=null;
+        if(content&&content.props[0]){
+          let c=content.props[0];
+          if(typeof c==='string'){try{const bin=atob(c.replace(/\s/g,'')),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);c=u;}catch(e){c=null;}}
+          if(c&&c.length){bytes=c;mime=fbxSniff(c);}
+        }
+        if(!mime){
+          const e=picE[name.toLowerCase()];
+          if(e){bytes=e.bytes;mime=MIMES[extOf(e.name)]||fbxSniff(e.bytes);}
+        }
+        if(!bytes||!mime)return -1;
+        return addImage(name,await bytesURL(bytes,mime));
+      };
+      const V=[],T=[];
+      for(const id in byId){
+        const model=byId[id];if(model.name!=='Model')continue;
+        const gc=kidsOf(+id,'Geometry')[0];if(!gc)continue;
+        const geo=byId[gc.a],vs=(fbxKid(geo,'Vertices')||{props:[[]]}).props[0],pi=(fbxKid(geo,'PolygonVertexIndex')||{props:[[]]}).props[0];
+        if(!vs.length||!pi.length)continue;
+        const W=G.clone().multiply(world(+id)),base=V.length;
+        for(let i=0;i+2<vs.length;i+=3){const v=new THREE.Vector3(vs[i],vs[i+1],vs[i+2]).applyMatrix4(W);V.push([v.x,v.y,v.z]);}
+        const mats=[];
+        for(const mc of kidsOf(+id,'Material')){
+          if(!(mc.a in matCache)){
+            const mo=byId[mc.a],dc=fbxProp(mo,'DiffuseColor')||fbxProp(mo,'Diffuse'),ii=await imgFor(mc.a);
+            let kd=null;
+            if(dc&&dc.length>=3&&dc.slice(0,3).every(Number.isFinite))kd='#'+dc.slice(0,3).map(x=>Math.round(Math.min(1,Math.max(0,x))*255).toString(16).padStart(2,'0')).join('');
+            matCache[mc.a]={kd,ii};
+          }
+          mats.push(matCache[mc.a]);
+        }
+        const uvL=fbxKid(geo,'LayerElementUV'),uvD=uvL&&fbxKid(uvL,'UV'),uvI=uvL&&fbxKid(uvL,'UVIndex');
+        const uvMap=uvL&&fbxKid(uvL,'MappingInformationType'),uvRef=uvL&&fbxKid(uvL,'ReferenceInformationType');
+        const uvArr=uvD?uvD.props[0]:null,uvIdx=uvI?uvI.props[0]:null,uvByVert=!!(uvMap&&/^ByVert/.test(uvMap.props[0]));
+        const mL=fbxKid(geo,'LayerElementMaterial'),mM=mL&&fbxKid(mL,'Materials'),mMap=mL&&fbxKid(mL,'MappingInformationType');
+        const mArr=mM?mM.props[0]:null,mAll=mMap&&/^AllSame/.test(mMap.props[0]);
+        let poly=[],pvStart=0,pIdx=0;
+        const flush=end=>{
+          const n=poly.length;
+          if(n>=3){
+            const mi=mArr?(mAll?mArr[0]:mArr[pIdx]):0,m=mats[mi]||null;
+            const uvOf=k=>{
+              if(!uvArr)return null;
+              let j=uvByVert?poly[k]:pvStart+k;
+              if(uvIdx&&(!uvRef||uvRef.props[0]==='IndexToDirect'||uvRef.props[0]==='Index'))j=uvIdx[j];
+              return j>=0&&uvArr[j*2]!==undefined?[uvArr[j*2],uvArr[j*2+1]]:null;
+            };
+            for(let k=1;k<n-1;k++){
+              const ids=[poly[0],poly[k],poly[k+1]];let col=null;
+              if(m){
+                const uv=[uvOf(0),uvOf(k),uvOf(k+1)];
+                if(m.ii>=0&&uv.every(Boolean)){
+                  const du=Math.floor(Math.min(uv[0][0],uv[1][0],uv[2][0])+1e-6),dv2=Math.floor(Math.min(uv[0][1],uv[1][1],uv[2][1])+1e-6);
+                  col=makeTex(m.ii,[uv[0][0]-du,uv[0][1]-dv2,uv[1][0]-du,uv[1][1]-dv2,uv[2][0]-du,uv[2][1]-dv2]);
+                }else if(m.kd)col=m.kd;
+              }
+              T.push([ids[0]+base,ids[1]+base,ids[2]+base,col]);
+            }
+          }
+          poly=[];pIdx++;pvStart=end;
+        };
+        for(let i=0;i<pi.length;i++){
+          let v=pi[i];
+          if(v<0){poly.push(~v);flush(i+1);}else poly.push(v);
+        }
+      }
+      const tris2=T.filter(t=>t[0]<V.length&&t[1]<V.length&&t[2]<V.length);
+      if(!V.length||!tris2.length){flash('No mesh found in that FBX');return;}
+      {const mn=[1e30,1e30,1e30],mx=[-1e30,-1e30,-1e30];
+       V.forEach(v=>{for(let k=0;k<3;k++){if(v[k]<mn[k])mn[k]=v[k];if(v[k]>mx[k])mx[k]=v[k];}});
+       const ext=Math.max(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]);
+       if(ext>10){const f=10/ext;V.forEach(v=>{v[0]*=f;v[1]*=f;v[2]*=f;});}}
+      pushUndo();verts=V;tris=tris2;selV=new Set();pending=[];changed();frame();
+      flash('Imported '+ff.name+': '+verts.length+' vertices, '+tris.length+' triangles');
+    }catch(err){flash('Could not read that FBX file');}
+  });
+  inp.click();
+}
+function exportFBX(){
+  const enc=new TextEncoder();
+  const S=s=>({t:'S',v:s}),I=n=>({t:'I',v:n}),L=n=>({t:'L',v:n}),D=n=>({t:'D',v:n}),B=b=>({t:'C',v:b}),R=u=>({t:'R',v:u}),AD=a=>({t:'d',v:a}),AI=a=>({t:'i',v:a});
+  const N=(name,props,children)=>({name,props:props||[],children:children||[]});
+  const P=(...a)=>N('P',a.map(x=>typeof x==='string'?S(x):typeof x==='number'&&Number.isInteger(x)&&false?I(x):x));
+  const pInt=(k,v)=>N('P',[S(k),S('int'),S('Integer'),S(''),I(v)]);
+  const pCol=(k,c)=>N('P',[S(k),S('Color'),S(''),S('A'),D(c[0]),D(c[1]),D(c[2])]);
+  const nm=(n,k)=>n+'\x00\x01'+k;
+  /* group faces by material */
+  const matKeys=[],matIdx=new Map(),faceMat=[],uvs=[],uvIdx=[],texUsed=[];
+  let anyMat=false,anyUncol=false;
+  tris.forEach(t=>{
+    const x=parseTex(t[3]);let key=null;
+    if(x&&images[x.img]){key='tex'+x.img;if(texUsed.indexOf(x.img)<0)texUsed.push(x.img);}
+    else if(typeof t[3]==='string'&&t[3][0]==='#')key='c'+t[3];
+    if(key)anyMat=true;else anyUncol=true;
+    faceMat.push(key);
+  });
+  if(anyMat){
+    if(anyUncol)faceMat.forEach((k,i)=>{if(k===null)faceMat[i]='def';});
+    faceMat.forEach(k=>{if(!matIdx.has(k)){matIdx.set(k,matKeys.length);matKeys.push(k);}});
+  }
+  const hasUV=texUsed.length>0;
+  const vArr=[],pArr=[],nArr=[],mArr=[];
+  verts.forEach(v=>vArr.push(v[0],v[1],v[2]));
+  tris.forEach((t,i)=>{
+    pArr.push(t[0],t[1],~t[2]);
+    const a=verts[t[0]],b=verts[t[1]],c=verts[t[2]];
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],wx=c[0]-a[0],wy=c[1]-a[1],wz=c[2]-a[2];
+    let nx=uy*wz-uz*wy,ny=uz*wx-ux*wz,nz=ux*wy-uy*wx;const l=Math.hypot(nx,ny,nz)||1;
+    nArr.push(nx/l,ny/l,nz/l);
+    if(anyMat)mArr.push(matIdx.get(faceMat[i]));
+    if(hasUV){
+      const x=parseTex(t[3]);
+      for(let k=0;k<3;k++){uvs.push(x&&images[x.img]?x.uv[k*2]:0,x&&images[x.img]?x.uv[k*2+1]:0);uvIdx.push(uvIdx.length);}
+    }
+  });
+  let nid=1000;const geoId=nid++,modId=nid++,matId={},texId={},vidId={};
+  matKeys.forEach(k=>{matId[k]=nid++;if(k.indexOf('tex')===0){texId[k]=nid++;vidId[k]=nid++;}});
+  const geoKids=[N('GeometryVersion',[I(124)]),N('Vertices',[AD(vArr)]),N('PolygonVertexIndex',[AI(pArr)])];
+  const layer=[N('Version',[I(100)]),N('LayerElement',[],[N('Type',[S('LayerElementNormal')]),N('TypedIndex',[I(0)])])];
+  geoKids.push(N('LayerElementNormal',[I(0)],[N('Version',[I(101)]),N('Name',[S('')]),N('MappingInformationType',[S('ByPolygon')]),N('ReferenceInformationType',[S('Direct')]),N('Normals',[AD(nArr)])]));
+  if(hasUV){
+    geoKids.push(N('LayerElementUV',[I(0)],[N('Version',[I(101)]),N('Name',[S('UVMap')]),N('MappingInformationType',[S('ByPolygonVertex')]),N('ReferenceInformationType',[S('IndexToDirect')]),N('UV',[AD(uvs)]),N('UVIndex',[AI(uvIdx)])]));
+    layer.push(N('LayerElement',[],[N('Type',[S('LayerElementUV')]),N('TypedIndex',[I(0)])]));
+  }
+  if(anyMat){
+    geoKids.push(N('LayerElementMaterial',[I(0)],[N('Version',[I(101)]),N('Name',[S('')]),N('MappingInformationType',[S('ByPolygon')]),N('ReferenceInformationType',[S('IndexToDirect')]),N('Materials',[AI(mArr)])]));
+    layer.push(N('LayerElement',[],[N('Type',[S('LayerElementMaterial')]),N('TypedIndex',[I(0)])]));
+  }
+  geoKids.push(N('Layer',[I(0)],layer));
+  const objects=[
+    N('Geometry',[L(geoId),S(nm('Carpet','Geometry')),S('Mesh')],geoKids),
+    N('Model',[L(modId),S(nm('Carpet','Model')),S('Mesh')],[N('Version',[I(232)]),N('Properties70',[],[pInt('DefaultAttributeIndex',0)]),N('Shading',[B(true)]),N('Culling',[S('CullingOff')])])
+  ];
+  const conn=[N('C',[S('OO'),L(modId),L(0)]),N('C',[S('OO'),L(geoId),L(modId)])];
+  const used=new Set();
+  matKeys.forEach(k=>{
+    const mname=k==='def'?'Default':k.indexOf('tex')===0?'Texture'+k.slice(3):'Color'+k.slice(2);
+    let col=[0.8,0.8,0.8];if(k[0]==='c'&&k!=='def')col=hexRGB(k.slice(1));
+    objects.push(N('Material',[L(matId[k]),S(nm(mname,'Material')),S('')],[N('Version',[I(102)]),N('ShadingModel',[S('phong')]),N('MultiLayer',[I(0)]),N('Properties70',[],[pCol('DiffuseColor',k.indexOf('tex')===0?[1,1,1]:col)])]));
+    conn.push(N('C',[S('OO'),L(matId[k]),L(modId)]));
+    if(k.indexOf('tex')===0){
+      const im=images[+k.slice(3)],mime=(/^data:([^;,]+)/.exec(im.url)||[])[1]||'image/png';
+      let ext=Object.keys(MIMES).find(e=>MIMES[e]===mime&&e!=='jpeg')||'png';
+      let fn=baseName(im.name).replace(/[^\w.\-]/g,'_');if(!/\.[a-z0-9]+$/i.test(fn))fn+='.'+ext;
+      let u=fn,c=1;while(used.has(u.toLowerCase()))u=fn.replace(/(\.[^.]*)?$/,'_'+(++c)+'$1');used.add(u.toLowerCase());
+      objects.push(N('Texture',[L(texId[k]),S(nm(mname+'_tex','Texture')),S('')],[N('Type',[S('TextureVideoClip')]),N('Version',[I(202)]),N('TextureName',[S(nm(mname+'_tex','Texture'))]),N('Media',[S(nm(mname+'_vid','Video'))]),N('FileName',[S(u)]),N('RelativeFilename',[S(u)]),N('ModelUVTranslation',[D(0),D(0)]),N('ModelUVScaling',[D(1),D(1)]),N('Texture_Alpha_Source',[S('None')]),N('Cropping',[I(0),I(0),I(0),I(0)])]));
+      objects.push(N('Video',[L(vidId[k]),S(nm(mname+'_vid','Video')),S('Clip')],[N('Type',[S('Clip')]),N('Properties70',[],[N('P',[S('Path'),S('KString'),S('XRefUrl'),S(''),S(u)])]),N('UseMipMap',[I(0)]),N('Filename',[S(u)]),N('RelativeFilename',[S(u)]),N('Content',[R(urlBytes(im.url))])]));
+      conn.push(N('C',[S('OP'),L(texId[k]),L(matId[k]),S('DiffuseColor')]));
+      conn.push(N('C',[S('OO'),L(vidId[k]),L(texId[k])]));
+    }
+  });
+  const cnt=(n)=>N('ObjectType',[S(n)],[N('Count',[I(n==='GlobalSettings'?1:n==='Model'?1:n==='Geometry'?1:n==='Material'?matKeys.length:n==='Texture'?texUsed.length:texUsed.length)])]);
+  const defs=[N('Version',[I(100)]),N('Count',[I(1+1+1+matKeys.length+texUsed.length*2)]),cnt('GlobalSettings'),cnt('Model'),cnt('Geometry')];
+  if(matKeys.length)defs.push(cnt('Material'));
+  if(texUsed.length){defs.push(cnt('Texture'));defs.push(cnt('Video'));}
+  const now=new Date();
+  const top=[
+    N('FBXHeaderExtension',[],[N('FBXHeaderVersion',[I(1003)]),N('FBXVersion',[I(7400)]),N('CreationTimeStamp',[],[N('Version',[I(1000)]),N('Year',[I(now.getFullYear())]),N('Month',[I(now.getMonth()+1)]),N('Day',[I(now.getDate())]),N('Hour',[I(now.getHours())]),N('Minute',[I(now.getMinutes())]),N('Second',[I(now.getSeconds())]),N('Millisecond',[I(0)])]),N('Creator',[S('Carpet')])]),
+    N('FileId',[R(Uint8Array.from([0x28,0xb3,0x2a,0xeb,0xb6,0x24,0xcc,0xc2,0xbf,0xc8,0xb0,0x2a,0xa9,0x2b,0xfc,0xf1]))]),
+    N('CreationTime',[S(now.toISOString())]),
+    N('Creator',[S('Carpet')]),
+    N('GlobalSettings',[],[N('Version',[I(1000)]),N('Properties70',[],[pInt('UpAxis',2),pInt('UpAxisSign',1),pInt('FrontAxis',1),pInt('FrontAxisSign',-1),pInt('CoordAxis',0),pInt('CoordAxisSign',1),N('P',[S('UnitScaleFactor'),S('double'),S('Number'),S(''),D(1)])])]),
+    N('Documents',[],[N('Count',[I(1)]),N('Document',[L(900000),S('Scene'),S('Scene')],[N('Properties70',[],[N('P',[S('SourceObject'),S('object'),S(''),S('')]),N('P',[S('ActiveAnimStackName'),S('KString'),S(''),S(''),S('')])]),N('RootNode',[L(0)])])]),
+    N('References'),
+    N('Definitions',[],defs),
+    N('Objects',[],objects),
+    N('Connections',[],conn)
+  ];
+  /* serialize */
+  const propBytes=p=>{
+    if(p.t==='S'){const b=enc.encode(p.v),o=new Uint8Array(5+b.length),d=new DataView(o.buffer);o[0]=83;d.setUint32(1,b.length,true);o.set(b,5);return o;}
+    if(p.t==='R'){const o=new Uint8Array(5+p.v.length),d=new DataView(o.buffer);o[0]=82;d.setUint32(1,p.v.length,true);o.set(p.v,5);return o;}
+    if(p.t==='I'){const o=new Uint8Array(5),d=new DataView(o.buffer);o[0]=73;d.setInt32(1,p.v,true);return o;}
+    if(p.t==='L'){const o=new Uint8Array(9),d=new DataView(o.buffer);o[0]=76;d.setBigInt64(1,BigInt(p.v),true);return o;}
+    if(p.t==='D'){const o=new Uint8Array(9),d=new DataView(o.buffer);o[0]=68;d.setFloat64(1,p.v,true);return o;}
+    if(p.t==='C'){return Uint8Array.from([67,p.v?1:0]);}
+    if(p.t==='d'||p.t==='i'){
+      const sz=p.t==='d'?8:4,o=new Uint8Array(13+p.v.length*sz),d=new DataView(o.buffer);
+      o[0]=p.t.charCodeAt(0);d.setUint32(1,p.v.length,true);d.setUint32(5,0,true);d.setUint32(9,p.v.length*sz,true);
+      for(let k=0;k<p.v.length;k++){if(sz===8)d.setFloat64(13+k*8,p.v[k],true);else d.setInt32(13+k*4,p.v[k],true);}
+      return o;
+    }
+    throw new Error('bad prop');
+  };
+  const ser=(n,off,out)=>{
+    const nb=enc.encode(n.name),pb=n.props.map(propBytes),pl=pb.reduce((s,b)=>s+b.length,0);
+    const start=out.length;
+    out.push(null);/* header placeholder */
+    out.push(nb);pb.forEach(b=>out.push(b));
+    let pos=off+13+nb.length+pl;
+    if(n.children.length){
+      n.children.forEach(c=>{pos=ser(c,pos,out);});
+      out.push(new Uint8Array(13));pos+=13;
+    }
+    const h=new Uint8Array(13),d=new DataView(h.buffer);
+    d.setUint32(0,pos,true);d.setUint32(4,n.props.length,true);d.setUint32(8,pl,true);h[12]=nb.length;
+    out[start]=h;
+    return pos;
+  };
+  const out=[],head=new Uint8Array(27),hd=new DataView(head.buffer);
+  head.set(enc.encode(FBX_MAGIC),0);head[20]=0;head[21]=0x1a;head[22]=0;hd.setUint32(23,7400,true);
+  out.push(head);let pos=27;
+  top.forEach(n=>{pos=ser(n,pos,out);});
+  out.push(new Uint8Array(13));pos+=13;
+  const fid=Uint8Array.from([0xfa,0xbc,0xab,0x09,0xd0,0xc8,0xd4,0x66,0xb1,0x76,0xfb,0x83,0x1c,0xf7,0x26,0x7e]);
+  out.push(fid);pos+=16;
+  let pad=((pos+15)&-16)-pos;if(pad===0)pad=16;/* zeros so the version lands on a 16-byte boundary */
+  out.push(new Uint8Array(pad));pos+=pad;
+  const vb=new Uint8Array(4);new DataView(vb.buffer).setUint32(0,7400,true);out.push(vb);
+  out.push(new Uint8Array(120));
+  out.push(Uint8Array.from([0xf8,0x5a,0x8c,0x6a,0xde,0xf5,0xd9,0x7e,0xec,0xe9,0x0c,0xe3,0x75,0x8f,0x29,0x0b]));
+  downloadBlob(new Blob(out,{type:'application/octet-stream'}),'model.fbx');
+  flash('Saved model.fbx'+(texUsed.length?' (textures embedded)':''));
+}
 function openModal(m){
   const ta=$('objtext'),ex=m==='export';
   $('modal').hidden=false;$('mTitle').textContent=ex?'Export OBJ':'Import OBJ';
@@ -1800,7 +2178,7 @@ function flyTick(t){
   const nav=!!drag&&(drag.kind==='orbit'||drag.kind==='pan'),m=[0,0,0];let any=false;
   flyHeld.forEach(c=>{if(c.startsWith('Key')&&!nav)return;const f=FLY[c];m[0]+=f[0];m[1]+=f[1];m[2]+=f[2];any=true;});
   if(any){
-    const e=camera.matrixWorld.elements,sp=view.dist*0.9*dt*(flyShift?3:1);
+    const e=camera.matrixWorld.elements,sp=view.dist*0.9*dt*(flyShift?0.33:1);
     view.target.x+=(e[0]*m[0]-e[8]*m[2])*sp;
     view.target.y+=(e[1]*m[0]-e[9]*m[2])*sp;
     view.target.z+=(e[2]*m[0]-e[10]*m[2]+m[1])*sp;
