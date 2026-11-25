@@ -175,6 +175,7 @@ dd{margin:0;color:var(--fg-dim)}
       </div>
       <div class="muted">Click a bone, then use the Move or Rotate tool and drag its gizmo. Nothing is kept: leaving pose mode restores the model.</div>
       <div class="row"><label for="rg_name">Name</label><input id="rg_name" type="text" disabled></div>
+      <div class="row"><label for="rg_mode">Moves</label><select id="rg_mode" disabled><option value="stretch">Stretch (bound vertices)</option><option value="object">Whole object</option></select></div>
       <div class="row"><label for="rg_x">X</label><input id="rg_x" type="number" step="0.1" disabled></div>
       <div class="row"><label for="rg_y">Y</label><input id="rg_y" type="number" step="0.1" disabled></div>
       <div class="row"><label for="rg_z">Z</label><input id="rg_z" type="number" step="0.1" disabled></div>
@@ -1088,7 +1089,7 @@ let ltPushed=false;
 /* ---------- rig: bones, binding, posing ---------- */
 function cleanBones(a){
   if(!Array.isArray(a))return [];
-  return a.map((b,i)=>({n:String(b&&b.n||'Bone'),p:b&&Array.isArray(b.p)&&b.p.length===3&&b.p.every(Number.isFinite)?b.p.slice():[0,0,0],par:b&&Number.isInteger(b.par)&&b.par>=0&&b.par<a.length&&b.par!==i?b.par:-1}));
+  return a.map((b,i)=>({n:String(b&&b.n||'Bone'),p:b&&Array.isArray(b.p)&&b.p.length===3&&b.p.every(Number.isFinite)?b.p.slice():[0,0,0],par:b&&Number.isInteger(b.par)&&b.par>=0&&b.par<a.length&&b.par!==i?b.par:-1,m:b&&b.m==='object'?'object':'stretch'}));
 }
 function syncVB(){
   while(vb.length<verts.length)vb.push(-1);vb.length=verts.length;
@@ -1100,19 +1101,22 @@ function rigLines(){
   syncVB();
   const o=['#rig bones '+bones.length],g={};
   bones.forEach((b,i)=>o.push('#rig bone '+i+' '+b.par+' '+b.p.map(n=>n.toFixed(5)).join(' ')+' '+(b.n.replace(/\s+/g,'_')||'Bone')));
+  bones.forEach((b,i)=>{if(b.m==='object')o.push('#rig mode '+i+' object');});
   vb.forEach((k,vi)=>{if(k>=0)(g[k]=g[k]||[]).push(vi);});
   Object.keys(g).forEach(k=>o.push('#rig verts '+k+' '+g[k].join(' ')));
   return o;
 }
 function parseRig(text){
-  const B=[],bv=[];
+  const B=[],bv=[],sm=[];
   text.split(/\r?\n/).forEach(raw=>{
     const p=raw.trim().split(/\s+/);if(p[0]!=='#rig')return;
     if(p[1]==='bone'&&p.length>=7){const i=+p[2];if(Number.isInteger(i)&&i>=0&&i<4096)B[i]={n:p.slice(7).join(' ')||'Bone',par:+p[3],p:[+p[4],+p[5],+p[6]]};}
+    else if(p[1]==='mode'&&p[3]==='object'){sm.push(+p[2]);}
     else if(p[1]==='verts'){const k=+p[2];p.slice(3).forEach(x=>{const v=+x;if(Number.isInteger(v)&&v>=0)bv[v]=k;});}
   });
   if(!B.length)return null;
   for(let i=0;i<B.length;i++)if(!B[i])B[i]={n:'Bone',par:-1,p:[0,0,0]};
+  sm.forEach(i=>{if(B[i])B[i].m='object';});
   const out=[];for(let i=0;i<bv.length;i++)out.push(bv[i]===undefined?-1:bv[i]);
   return {b:B,vb:out};
 }
@@ -1164,7 +1168,11 @@ function subtree(bi){
 }
 function rigSnap(bi){
   syncVB();const sub=subtree(bi),vs=[];
-  vb.forEach((b,i)=>{if(sub.has(b))vs.push([i,verts[i].slice()]);});
+  const par=verts.map((_,i)=>i),fnd=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};
+  tris.forEach(t=>{const p=fnd(t[0]),q=fnd(t[1]),r=fnd(t[2]);par[q]=p;par[fnd(r)]=p;});
+  const whole=new Set();
+  verts.forEach((_,i)=>{const k=vb[i];if(k>=0&&sub.has(k)&&bones[k]&&bones[k].m==='object')whole.add(fnd(i));});
+  verts.forEach((_,i)=>{if(sub.has(vb[i])||whole.has(fnd(i)))vs.push([i,verts[i].slice()]);});
   return {bs:[...sub].map(i=>[i,bones[i].p.slice()]),vs};
 }
 function rigApply(S,f){S.bs.forEach(a=>{bones[a[0]].p=f(a[1]);});S.vs.forEach(a=>{verts[a[0]]=f(a[1]);});}
@@ -1214,7 +1222,7 @@ function addBone(){
   const q=bones[selB];
   let p=selV.size?median():q?[q.p[0],q.p[1],q.p[2]+0.5]:[0,0,0.8];
   p=p.map(n=>Math.round(n*1e5)/1e5);
-  bones.push({n:'Bone'+(bones.length+1),p,par:q?selB:-1});
+  bones.push({n:'Bone'+(bones.length+1),p,par:q?selB:-1,m:'stretch'});
   selectBone(bones.length-1);
 }
 function deleteBone(){
@@ -1255,11 +1263,11 @@ function rigUI(){
   bones.forEach((b,i)=>{const o=document.createElement('option');o.value=i;o.textContent=(b.par>=0?'   ':'')+b.n;o.selected=i===selB;L.appendChild(o);});
   const B=bones[selB];
   document.querySelectorAll('#rigPanel [data-need]').forEach(el=>{el.disabled=!B;});
-  ['rg_name','rg_x','rg_y','rg_z'].forEach(id=>{$(id).disabled=!B;});
+  ['rg_name','rg_x','rg_y','rg_z','rg_mode'].forEach(id=>{$(id).disabled=!B;});
   $('rg_info').textContent=bones.length?bones.length+(bones.length===1?' bone, ':' bones, ')+vb.filter(b=>b>=0).length+' vertices bound'+(B?'. Selected: '+B.n:''):'No bones yet';
   if(!B)return;
   const set=(id,v)=>{const el=$(id);if(document.activeElement!==el)el.value=v;};
-  set('rg_name',B.n);set('rg_x',Math.round(B.p[0]*1000)/1000);set('rg_y',Math.round(B.p[1]*1000)/1000);set('rg_z',Math.round(B.p[2]*1000)/1000);
+  set('rg_name',B.n);set('rg_mode',B.m==='object'?'object':'stretch');set('rg_x',Math.round(B.p[0]*1000)/1000);set('rg_y',Math.round(B.p[1]*1000)/1000);set('rg_z',Math.round(B.p[2]*1000)/1000);
 }
 document.querySelectorAll('#rigPanel [data-rg]').forEach(b=>b.addEventListener('click',()=>rigAct(b.dataset.rg)));
 $('rg_list').addEventListener('change',e=>{const i=parseInt(e.target.value,10);if(bones[i])selectBone(i);});
@@ -1268,6 +1276,7 @@ $('rg_reset').addEventListener('click',()=>{if(poseOn&&poseSnap)applySnap(poseSn
 let rgPushed=false;
 $('rg_name').addEventListener('input',e=>{const B=bones[selB];if(!B)return;if(!rgPushed){pushUndo();rgPushed=true;}B.n=e.target.value||'Bone';rigUI();saveSoon();});
 $('rg_name').addEventListener('change',()=>{rgPushed=false;});
+$('rg_mode').addEventListener('change',e=>{const B=bones[selB];if(!B)return;pushUndo();B.m=e.target.value==='object'?'object':'stretch';changed();});
 ['rg_x','rg_y','rg_z'].forEach((id,k)=>$(id).addEventListener('change',()=>{
   const B=bones[selB],v=parseFloat($(id).value);if(!B||!Number.isFinite(v))return;
   pushUndo();const d=v-B.p[k];
@@ -1447,14 +1456,15 @@ function setRay(x,y){ndc.set(x/W*2-1,-(y/H)*2+1);raycaster.setFromCamera(ndc,cam
 function rayPlane(x,y,pl){setRay(x,y);const o=new THREE.Vector3();return raycaster.ray.intersectPlane(pl,o)?o:null;}
 function toScreen(v){_v.set(v[0],v[1],v[2]).project(camera);return [(_v.x*.5+.5)*W,(-_v.y*.5+.5)*H,_v.z];}
 function pickVertex(x,y){
-  let best=-1,bd=13*13;
-  verts.forEach((v,i)=>{const p=toScreen(v);if(p[2]<-1||p[2]>1)return;const d=(p[0]-x)**2+(p[1]-y)**2;if(d<bd){bd=d;best=i;}});
+  let best=-1,bz=Infinity,bd=Infinity;
+  verts.forEach((v,i)=>{const p=toScreen(v);if(p[2]<-1||p[2]>1)return;const d=(p[0]-x)**2+(p[1]-y)**2;if(d>=13*13)return;
+    if(p[2]<bz-1e-5||(Math.abs(p[2]-bz)<=1e-5&&d<bd)){bz=p[2];bd=d;best=i;}});
   return best;
 }
 function pickFace(x,y){
   if(!tris.length)return -1;setRay(x,y);
-  const h=raycaster.intersectObject(solid,false);
-  return h.length&&h[0].faceIndex!=null?h[0].faceIndex:-1;
+  const h=raycaster.intersectObject(solid,false).filter(q=>q.faceIndex!=null).sort((a,b)=>a.distance-b.distance);
+  return h.length?h[0].faceIndex:-1;
 }
 function pickElement(x,y){
   if(mode==='v'){const i=pickVertex(x,y);return i>=0?{t:'v',i}:null;}
