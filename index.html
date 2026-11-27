@@ -206,8 +206,15 @@ dd{margin:0;color:var(--fg-dim)}
       <div id="wsList"></div>
     </div></details>
     <details class="panel" id="propsPanel"><summary>Properties</summary><div class="pbody">
-      <div id="pp_none" class="muted">Select a light, fire or gas to edit its properties.</div>
+      <div id="pp_none" class="muted">Select a mesh, light, fire or gas to edit its properties.</div>
       <div class="row" id="pp_namerow" hidden><label for="pp_name">Name</label><input id="pp_name" type="text" maxlength="40"></div>
+      <div class="psec" id="ppMesh" hidden>
+      <div class="row"><label for="mp_col">Color</label><input id="mp_col" type="color" value="#c7c7c7"></div>
+      <div class="row"><span class="lbl">Position</span><input id="mp_px" type="number" step="0.1" title="X"><input id="mp_py" type="number" step="0.1" title="Y"><input id="mp_pz" type="number" step="0.1" title="Z"></div>
+      <div class="row"><span class="lbl">Rotation</span><input id="mp_rx" type="number" step="5" value="0" title="X"><input id="mp_ry" type="number" step="5" value="0" title="Y"><input id="mp_rz" type="number" step="5" value="0" title="Z"></div>
+      <div class="row"><span class="lbl">Size</span><input id="mp_sx" type="number" step="0.1" min="0.01" title="X"><input id="mp_sy" type="number" step="0.1" min="0.01" title="Y"><input id="mp_sz" type="number" step="0.1" min="0.01" title="Z"></div>
+      <div class="muted">Rotation turns the mesh by the entered degrees around its center. Select whole meshes (Workspace, Shift for several).</div>
+      </div>
       <div class="psec" id="ppLight" hidden>
       <div id="lt_info" class="muted" hidden>No light selected</div>
       <div class="row"><label for="lt_type">Type</label><select id="lt_type"><option value="spot">Spot</option><option value="point">Point</option><option value="sun">Sun</option></select></div>
@@ -356,17 +363,17 @@ let plane='XY',planeOff=0,snapOn=true,snapSize=0.5;
 let undoStack=[],redoStack=[],mv=null,drag=null,lastMouse=null,flashMsg='',flashT=0,edgeCount=0;
 let W=300,H=300,saveT=0;
 let lights=[],selL=-1;
-let bones=[],vb=[],selB=-1,ph=[];
+let bones=[],vb=[],selB=-1,ph=[],vn=[];
 let images=[],atlas=null,atlasDirty=false,pixelTex=false,imgSaveT=0;const texCache=new Map();
 const NORM={XY:new THREE.Vector3(0,0,1),XZ:new THREE.Vector3(0,1,0),YZ:new THREE.Vector3(1,0,0)};
 const NAXIS={XY:2,XZ:1,YZ:0};
 const AX={x:new THREE.Vector3(1,0,0),y:new THREE.Vector3(0,1,0),z:new THREE.Vector3(0,0,1)};
 
 /* ---------- history, storage ---------- */
-const snap0=()=>JSON.stringify({v:verts,t:tris,l:lights,b:bones,vb:vb,ph:ph});
+const snap0=()=>JSON.stringify({v:verts,t:tris,l:lights,b:bones,vb:vb,ph:ph,n:vn});
 let poseOn=false,poseSnap=null;
 function pushUndo(){if(poseOn)return;undoStack.push(snap0());if(undoStack.length>100)undoStack.shift();redoStack.length=0;}
-function applySnap(s){const o=JSON.parse(s);verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l:[];bones=Array.isArray(o.b)?o.b:[];vb=Array.isArray(o.vb)?o.vb:[];ph=Array.isArray(o.ph)?o.ph:[];if(selB>=bones.length)selB=-1;syncVB();if(selL>=lights.length)selL=-1;selV=new Set([...selV].filter(i=>i<verts.length));pending=[];changed();}
+function applySnap(s){const o=JSON.parse(s);verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l:[];bones=Array.isArray(o.b)?o.b:[];vb=Array.isArray(o.vb)?o.vb:[];ph=Array.isArray(o.ph)?o.ph:[];vn=Array.isArray(o.n)?o.n:[];if(selB>=bones.length)selB=-1;syncVB();if(selL>=lights.length)selL=-1;selV=new Set([...selV].filter(i=>i<verts.length));pending=[];changed();}
 function undo(){if(mv)return;if(!undoStack.length){flash('Nothing to undo');return;}redoStack.push(snap0());applySnap(undoStack.pop());}
 function redo(){if(mv)return;if(!redoStack.length){flash('Nothing to redo');return;}undoStack.push(snap0());applySnap(redoStack.pop());}
 function validMesh(o){
@@ -374,7 +381,7 @@ function validMesh(o){
     o.t.every(t=>Array.isArray(t)&&(t.length===3||t.length===4)&&[t[0],t[1],t[2]].every(i=>Number.isInteger(i)&&i>=0&&i<o.v.length)&&(t[3]==null||typeof t[3]==='string'));
 }
 function saveSoon(){if(poseOn)return;clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(STORE,snap0());}catch(e){}},400);}
-function loadSaved(){try{const s=localStorage.getItem(STORE);if(!s)return false;const o=JSON.parse(s);if(!validMesh(o))return false;verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l.map(cleanLight).filter(Boolean):[];bones=cleanBones(o.b);vb=Array.isArray(o.vb)?o.vb:[];ph=Array.isArray(o.ph)?o.ph:[];syncVB();return true;}catch(e){return false;}}
+function loadSaved(){try{const s=localStorage.getItem(STORE);if(!s)return false;const o=JSON.parse(s);if(!validMesh(o))return false;verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l.map(cleanLight).filter(Boolean):[];bones=cleanBones(o.b);vb=Array.isArray(o.vb)?o.vb:[];ph=Array.isArray(o.ph)?o.ph:[];vn=Array.isArray(o.n)?o.n:[];syncVB();return true;}catch(e){return false;}}
 
 /* ---------- primitives ---------- */
 const CUBE_V=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
@@ -550,12 +557,14 @@ function drawTexPrev(){
 }
 
 /* ---------- editing operations ---------- */
+function vnSync(){while(vn.length<verts.length)vn.push(0);vn.length=verts.length;}
 function removeVerts(set){
   const map=new Int32Array(verts.length).fill(-1);let n=0;const nv=[];
   verts.forEach((v,i)=>{if(!set.has(i)){map[i]=n++;nv.push(v);}});
   tris=tris.filter(t=>map[t[0]]>=0&&map[t[1]]>=0&&map[t[2]]>=0).map(t=>[map[t[0]],map[t[1]],map[t[2]],t[3]||null]);
   syncVB();{const nvb=[];verts.forEach((v,i)=>{if(map[i]>=0)nvb.push(vb[i]);});vb=nvb;}
   phSync();{const nph=[];verts.forEach((v,i)=>{if(map[i]>=0)nph.push(ph[i]);});ph=nph;}
+  vnSync();{const nvn=[];verts.forEach((v,i)=>{if(map[i]>=0)nvn.push(vn[i]||0);});vn=nvn;}
   verts=nv;
   const ns=new Set();selV.forEach(i=>{if(map[i]>=0)ns.add(map[i]);});selV=ns;
 }
@@ -705,7 +714,7 @@ function selectAll(){
 }
 function selectNone(){selV=new Set();selF=-1;selL=-1;changed();}
 function selectInvert(){const n=new Set();verts.forEach((_,i)=>{if(!selV.has(i))n.add(i);});selV=n;changed();}
-function newMesh(){pushUndo();verts=[];tris=[];bones=[];vb=[];ph=[];selB=-1;lights=[];selL=-1;fires=[];selF=-1;fpi=-1;spawnAcc=[];smokeAcc=[];gasAcc=[];saveFires();selV=new Set();pending=[];changed();}
+function newMesh(){pushUndo();verts=[];tris=[];bones=[];vb=[];ph=[];vn=[];selB=-1;lights=[];selL=-1;fires=[];selF=-1;fpi=-1;spawnAcc=[];smokeAcc=[];gasAcc=[];saveFires();selV=new Set();pending=[];changed();}
 function median(){const m=[0,0,0];selV.forEach(i=>{m[0]+=verts[i][0];m[1]+=verts[i][1];m[2]+=verts[i][2];});const n=selV.size||1;return m.map(x=>x/n);}
 
 /* ---------- three.js scene ---------- */
@@ -1464,7 +1473,7 @@ function syncVB(){
   while(vb.length<verts.length)vb.push(-1);vb.length=verts.length;
   for(let i=0;i<vb.length;i++)if(!(vb[i]>=0&&vb[i]<bones.length))vb[i]=-1;
 }
-function setRig(r){ph=[];bones=r?cleanBones(r.b):[];vb=r&&Array.isArray(r.vb)?r.vb.slice():[];selB=-1;syncVB();}
+function setRig(r){ph=[];vn=[];bones=r?cleanBones(r.b):[];vb=r&&Array.isArray(r.vb)?r.vb.slice():[];selB=-1;syncVB();}
 function rigLines(){
   if(!bones.length)return [];
   syncVB();
@@ -2235,6 +2244,7 @@ function updateSelUI(){
   const ft=fireSel()?fires[selF]:null;if(ft)$('selInfo').textContent=ft.gas?'Gas selected':'Fire selected';
   const m=n?median():(lt?lt.pos:(ft?ft.pos:null));
   ['fx','fy','fz'].forEach((id,k)=>{const el=$(id);el.disabled=!m;if(document.activeElement!==el)el.value=m?String(Math.round(m[k]*1e4)/1e4):'';});
+  updateMeshProps();
 }
 function updateStats(){
   $('sV').textContent=verts.length;$('sE').textContent=edgeCount;$('sT').textContent=tris.length;
@@ -3484,10 +3494,64 @@ $('tx_prev').addEventListener('click',e=>{
   $('tx_frame').value=row*c.cols+col+1;drawTexPrev();
 });
 
+/* ---------- mesh object properties ---------- */
+function meshTargets(){
+  if(!selV.size)return [];
+  return wsComponents().comps.map((ids,n)=>({ids,n})).filter(m=>m.ids.every(i=>selV.has(i)));
+}
+function meshName(ids){for(let k=0;k<ids.length;k++)if(vn[ids[k]])return vn[ids[k]];return '';}
+function meshBox(ms){
+  const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
+  ms.forEach(m=>m.ids.forEach(i=>{const v=verts[i];for(let k=0;k<3;k++){if(v[k]<mn[k])mn[k]=v[k];if(v[k]>mx[k])mx[k]=v[k];}}));
+  return {c:[0,1,2].map(k=>(mn[k]+mx[k])/2),s:[0,1,2].map(k=>mx[k]-mn[k])};
+}
+function updateMeshProps(){
+  const P=$('propsPanel');if(!P||!P.open)return;
+  const ms=meshTargets();if(!ms.length)return;
+  const b=meshBox(ms),rd=x=>Math.round(x*1000)/1000,set=(id,v)=>{const el=$(id);if(document.activeElement!==el)el.value=v;};
+  ['x','y','z'].forEach((a,k)=>{set('mp_p'+a,rd(b.c[k]));set('mp_s'+a,rd(b.s[k]));set('mp_r'+a,0);});
+  const S=new Set();ms.forEach(m=>m.ids.forEach(i=>S.add(i)));
+  let col='#c7c7c7';
+  for(const t of tris){if(S.has(t[0])){if(typeof t[3]==='string'&&/^#[0-9a-f]{6}$/i.test(t[3]))col=t[3].toLowerCase();break;}}
+  set('mp_col',col);
+}
+function meshEdit(fn){
+  const ms=meshTargets();if(!ms.length)return;
+  const ids=[];ms.forEach(m=>m.ids.forEach(i=>ids.push(i)));
+  pushUndo();
+  if(fn(ids,meshBox(ms))===false){undoStack.pop();return;}
+  changed();
+}
+['x','y','z'].forEach((a,k)=>{
+  $('mp_p'+a).addEventListener('change',e=>{
+    const v=parseFloat(e.target.value);if(!Number.isFinite(v)){updateMeshProps();return;}
+    meshEdit((ids,b)=>{const d=v-b.c[k];if(Math.abs(d)<1e-9)return false;ids.forEach(i=>{verts[i][k]+=d;});});
+  });
+  $('mp_s'+a).addEventListener('change',e=>{
+    const v=parseFloat(e.target.value);if(!(v>0.001)){updateMeshProps();return;}
+    meshEdit((ids,b)=>{if(b.s[k]<1e-9||Math.abs(v-b.s[k])<1e-9)return false;const f=v/b.s[k];ids.forEach(i=>{verts[i][k]=b.c[k]+(verts[i][k]-b.c[k])*f;});});
+  });
+  $('mp_r'+a).addEventListener('change',e=>{
+    const v=parseFloat(e.target.value);e.target.value=0;if(!Number.isFinite(v)||!v)return;
+    meshEdit((ids,b)=>{
+      const q=new THREE.Quaternion().setFromAxisAngle(AX[a],v*D2R),t=new THREE.Vector3();
+      ids.forEach(i=>{t.set(verts[i][0]-b.c[0],verts[i][1]-b.c[1],verts[i][2]-b.c[2]).applyQuaternion(q);verts[i]=[t.x+b.c[0],t.y+b.c[1],t.z+b.c[2]];});
+    });
+  });
+});
+$('mp_col').addEventListener('change',e=>{
+  const ms=meshTargets();if(!ms.length)return;
+  const S=new Set();ms.forEach(m=>m.ids.forEach(i=>S.add(i)));const hex=e.target.value;
+  pushUndo();tris.forEach((t,i)=>{if(S.has(t[0]))tris[i]=[t[0],t[1],t[2],hex];});changed();
+});
+$('propsPanel').addEventListener('toggle',updateMeshProps);
+
 /* ---------- combined Properties panel ---------- */
 function propTarget(){
   const L=curLight();if(L)return {kind:'light',o:L,def:'Light '+(selL+1)};
   if(fireSel()){const f=fires[selF];return {kind:'fire',o:f,def:(f.gas?'Gas ':'Fire ')+(selF+1)};}
+  const ms=meshTargets();
+  if(ms.length)return {kind:'mesh',ms,o:{name:ms.length===1?meshName(ms[0].ids):''},def:ms.length===1?'Mesh '+(ms[0].n+1):'Multiple meshes'};
   return null;
 }
 function updateProps(){
@@ -3496,7 +3560,8 @@ function updateProps(){
   $('pp_none').hidden=!!t;$('pp_namerow').hidden=!t;
   $('ppLight').hidden=!(t&&t.kind==='light');
   $('firePanel').hidden=!(F&&!F.gas);$('gasPanel').hidden=!(F&&F.gas);
-  const n=$('pp_name');
+  const n=$('pp_name');n.disabled=!!(t&&t.kind==='mesh'&&t.ms.length>1);
+  $('ppMesh').hidden=!(t&&t.kind==='mesh');
   if(t){n.placeholder=t.def;if(document.activeElement!==n)n.value=t.o.name||'';}
   else if(document.activeElement!==n)n.value='';
 }
@@ -3504,6 +3569,7 @@ let ppPushed=false;
 $('pp_name').addEventListener('input',e=>{
   const t=propTarget();if(!t)return;
   const v=e.target.value.slice(0,40);
+  if(t.kind==='mesh'){if(t.ms.length!==1)return;if(!ppPushed){pushUndo();ppPushed=true;}vnSync();t.ms[0].ids.forEach(i=>{vn[i]=v||0;});saveSoon();updateWorkspace();return;}
   if(t.kind==='light'){if(!ppPushed){pushUndo();ppPushed=true;}t.o.name=v;updateLightUI();saveSoon();updateWorkspace();}
   else{t.o.name=v;saveFires();$('fr_sel').innerHTML='';updateFireUI();}
 });
@@ -3771,10 +3837,21 @@ function updateWorkspace(){
   try{
     const L=$('wsList'),items=[],{comps,loose}=wsComponents();
     const selAll=ids=>ids.length>0&&selV.size>0&&ids.every(i=>selV.has(i));
-    comps.forEach((ids,n)=>items.push({k:'mesh',name:'Mesh '+(n+1),sel:selAll(ids),go:()=>{selV=new Set(ids);selL=-1;selF=-1;selB=-1;changed();}}));
-    if(loose.length)items.push({k:'mesh',name:'Loose vertices',sel:selAll(loose),go:()=>{selV=new Set(loose);selL=-1;selF=-1;selB=-1;changed();}});
-    lights.forEach((l,i)=>items.push({k:'light',name:l.name||'Light '+(i+1),sel:!selV.size&&selL===i,go:()=>selectLight(i)}));
-    fires.forEach((f,i)=>items.push({k:f.gas?'gas':'fire',name:f.name||((f.gas?'Gas ':'Fire ')+(i+1)),sel:fireSel()&&selF===i,go:()=>selectFire(i)}));
+    const M=curMulti(),anySel=()=>selV.size||selL>=0||fireSel()||allX();
+    const meshGo=ids=>e=>{
+      if(e&&e.shiftKey&&anySel()){
+        const M2=curMulti(),all=ids.every(i=>selV.has(i)),nx=new Set(selV);
+        ids.forEach(i=>all?nx.delete(i):nx.add(i));
+        selV=nx;selB=-1;
+        if(M2.ls.size||M2.fs.size){applyMulti(M2.ls,M2.fs);return;}
+        changed();return;
+      }
+      selV=new Set(ids);selL=-1;selF=-1;selB=-1;changed();
+    };
+    comps.forEach((ids,n)=>items.push({k:'mesh',name:meshName(ids)||'Mesh '+(n+1),sel:selAll(ids),go:meshGo(ids)}));
+    if(loose.length)items.push({k:'mesh',name:'Loose vertices',sel:selAll(loose),go:meshGo(loose)});
+    lights.forEach((l,i)=>items.push({k:'light',name:l.name||'Light '+(i+1),sel:M.ls.has(i),go:e=>{if(e&&e.shiftKey&&anySel())shiftPick('l',i);else selectLight(i);}}));
+    fires.forEach((f,i)=>items.push({k:f.gas?'gas':'fire',name:f.name||((f.gas?'Gas ':'Fire ')+(i+1)),sel:M.fs.has(i),go:e=>{if(e&&e.shiftKey&&anySel())shiftPick('f',i);else selectFire(i);}}));
     bones.forEach((b,i)=>items.push({k:'bone',name:b.n,sel:selB===i,go:()=>selectBone(i)}));
     L.innerHTML='';
     if(!items.length){const m=document.createElement('div');m.className='muted';m.textContent='Nothing in the scene yet';L.appendChild(m);return;}
@@ -3782,7 +3859,7 @@ function updateWorkspace(){
       const b=document.createElement('button');b.type='button';b.className='wsItem k-'+it.k+(it.sel?' sel':'');
       b.innerHTML='<svg viewBox="0 0 24 24">'+WS_ICON[it.k]+'</svg>';
       const sp=document.createElement('span');sp.textContent=it.name;b.appendChild(sp);
-      b.addEventListener('click',it.go);L.appendChild(b);
+      b.addEventListener('click',e=>it.go(e));L.appendChild(b);
     });
   }catch(e){}
 }
