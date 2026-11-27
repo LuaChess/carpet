@@ -78,6 +78,19 @@ input[type=color]{width:44px;height:26px;padding:0;border:1px solid var(--line);
 .sw button{aspect-ratio:1;border:1px solid #000;border-radius:3px;cursor:pointer;padding:0}
 .sw button:hover{outline:1px solid var(--on)}
 .muted{color:var(--fg-dim)}
+#wsList{display:flex;flex-direction:column;gap:2px;max-height:260px;overflow-y:auto}
+.wsItem{display:flex;align-items:center;gap:7px;width:100%;text-align:left;padding:4px 6px;border:0;border-radius:4px;background:transparent;color:var(--fg);font:inherit;cursor:pointer}
+.wsItem:hover{background:var(--bg-3)}
+.wsItem.sel{background:var(--bg-4);box-shadow:inset 2px 0 0 var(--sel)}
+.wsItem.k-mesh svg{color:#fff}
+.wsItem.k-light svg{color:#ffd23f}
+.wsItem.k-fire svg{color:#ff6a2a}
+.wsItem.k-gas svg{color:#7fd0ff}
+.wsItem.k-bone svg{color:#c9b38a}
+.wsItem svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.wsItem span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.psec{display:flex;flex-direction:column;gap:8px}
+#pp_name{background:var(--bg-2);border:1px solid var(--line);color:var(--fg);border-radius:3px;padding:4px 6px;width:100%;min-width:0;font:inherit}
 input[type=range]{flex:1;min-width:0;accent-color:#ddd}
 dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0}
 dt{color:var(--fg)}
@@ -105,7 +118,7 @@ dd{margin:0;color:var(--fg-dim)}
 
   <div id="tools">
     <button class="tool" type="button" data-tool="select" title="Select (Q)" aria-label="Select"><svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.3L9.5 19z" fill="currentColor"/></svg></button>
-    <button class="tool" type="button" data-tool="move" title="Move (W)" aria-label="Move"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
+    <button class="tool" type="button" data-tool="move" title="Move (Shift+W)" aria-label="Move"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
     <button class="tool" type="button" data-tool="vertex" title="Add Vertex (E)" aria-label="Add Vertex"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5" fill="currentColor"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg></button>
     <button class="tool" type="button" data-tool="tri" title="Add Triangle (R)" aria-label="Add Triangle"><svg viewBox="0 0 24 24"><path d="M12 5l8 14H4z"/><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="20" cy="19" r="1.8" fill="currentColor"/><circle cx="4" cy="19" r="1.8" fill="currentColor"/></svg></button>
     <button class="tool" type="button" data-tool="rotate" title="Rotate (T)" aria-label="Rotate"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></svg></button>
@@ -189,12 +202,14 @@ dd{margin:0;color:var(--fg-dim)}
       </div>
       <div class="muted">With this panel open, drag a bone joint in the view to move it, its child bones and the vertices bound to them.</div>
     </div></details>
-    <details class="panel"><summary>Light</summary><div class="pbody">
-      <div id="lt_info" class="muted">No light selected</div>
-      <div class="grid2">
-        <button class="btn" type="button" data-run="addlight">Add light</button>
-        <button class="btn" type="button" data-run="del">Delete</button>
-      </div>
+    <details class="panel" id="wsPanel"><summary>Workspace</summary><div class="pbody">
+      <div id="wsList"></div>
+    </div></details>
+    <details class="panel" id="propsPanel"><summary>Properties</summary><div class="pbody">
+      <div id="pp_none" class="muted">Select a light, fire or gas to edit its properties.</div>
+      <div class="row" id="pp_namerow" hidden><label for="pp_name">Name</label><input id="pp_name" type="text" maxlength="40"></div>
+      <div class="psec" id="ppLight" hidden>
+      <div id="lt_info" class="muted" hidden>No light selected</div>
       <div class="row"><label for="lt_type">Type</label><select id="lt_type"><option value="spot">Spot</option><option value="point">Point</option><option value="sun">Sun</option></select></div>
       <div class="row"><label for="lt_col">Color</label><input id="lt_col" type="color" value="#ffffff"></div>
       <div class="row"><label for="lt_pow">Power</label><input id="lt_pow" type="range" min="0" max="20" step="0.1" value="6"></div>
@@ -202,6 +217,32 @@ dd{margin:0;color:var(--fg-dim)}
       <div class="row"><label for="lt_sh">Shadows</label><input id="lt_sh" type="checkbox" checked></div>
       <div class="row"><span class="lbl">Rotation</span><input id="lt_rx" type="number" step="5" title="X"><input id="lt_ry" type="number" step="5" title="Y"><input id="lt_rz" type="number" step="5" title="Z"></div>
       <div class="row"><label for="lt_scl">Scale</label><input id="lt_scl" type="number" step="0.1" min="0.1" value="1"></div>
+      </div>
+      <div class="psec" id="firePanel" hidden>
+      <div id="fr_info" class="muted" hidden>No fire yet. Add &gt; Miscellaneous &gt; Fire</div>
+      <div class="row" hidden><label for="fr_sel">Fire</label><select id="fr_sel"></select></div>
+      <div class="row"><label for="fr_smoke">Smoke</label><input id="fr_smoke" type="checkbox"></div>
+      <div class="row"><label for="fr_size">Size</label><input id="fr_size" type="range" min="0.3" max="3" step="0.05" value="1"></div>
+      <div class="row"><label for="fr_int">Intensity</label><input id="fr_int" type="range" min="0.2" max="2" step="0.05" value="1"></div>
+      <div class="row"><label for="fr_col">Color</label><input id="fr_col" type="color" value="#ff7a1a"></div>
+      <div class="row"><span class="lbl">Position</span><input id="fr_x" type="number" step="0.5" title="X"><input id="fr_y" type="number" step="0.5" title="Y"><input id="fr_z" type="number" step="0.5" title="Z"></div>
+      <div class="row"><span class="lbl">Rotation</span><input id="fr_rx" type="number" step="5" title="X"><input id="fr_ry" type="number" step="5" title="Y"><input id="fr_rz" type="number" step="5" title="Z"></div>
+      <div class="muted">Flames and smoke slide around objects and pool under them.</div>
+      </div>
+      <div class="psec" id="gasPanel" hidden>
+      <div id="ga_info" class="muted" hidden>Select a gas (Add &gt; Miscellaneous &gt; Gas). Rotate it with the Rotate gizmo to aim it.</div>
+      <div class="row"><label for="ga_col">Color</label><input id="ga_col" type="color" value="#9fd8ff"></div>
+      <div class="row"><label for="ga_speed">Speed</label><input id="ga_speed" type="range" min="0.2" max="12" step="0.1" value="3"></div>
+      <div class="row"><label for="ga_cone">Cone angle</label><input id="ga_cone" type="range" min="0" max="90" step="1" value="15"></div>
+      <div class="row"><label for="ga_dens">Amount</label><input id="ga_dens" type="range" min="0.2" max="3" step="0.05" value="1"></div>
+      <div class="row"><label for="ga_size">Puff size</label><input id="ga_size" type="range" min="0.3" max="3" step="0.05" value="1"></div>
+      <div class="row"><label for="ga_life">Lifetime</label><input id="ga_life" type="range" min="1" max="10" step="0.5" value="4"></div>
+      <div class="row"><label for="ga_lift">Lift</label><input id="ga_lift" type="range" min="-2" max="2" step="0.05" value="0"></div>
+      <div class="row"><label for="ga_spread">Spread on hit</label><input id="ga_spread" type="range" min="0" max="3" step="0.05" value="1"></div>
+      <div class="row"><span class="lbl">Position</span><input id="ga_x" type="number" step="0.5" title="X"><input id="ga_y" type="number" step="0.5" title="Y"><input id="ga_z" type="number" step="0.5" title="Z"></div>
+      <div class="row"><span class="lbl">Rotation</span><input id="ga_rx" type="number" step="5" title="X"><input id="ga_ry" type="number" step="5" title="Y"><input id="ga_rz" type="number" step="5" title="Z"></div>
+      <div class="muted">The two arrows show the spread direction (cone angle) in modelling mode. Gas hits geometry and spreads over it. Lift above 0 rises, below 0 sinks. The gas is only rendered in Render mode.</div>
+      </div>
     </div></details>
     <details class="panel"><summary>Subdivision</summary><div class="pbody">
       <div class="row"><label for="subLevels">Levels</label><input id="subLevels" type="number" min="1" max="4" step="1" value="1"></div>
@@ -240,28 +281,6 @@ dd{margin:0;color:var(--fg-dim)}
       <div class="row"><label for="rd_res">Image size</label><select id="rd_res"><option value="1">1x (viewport)</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option></select></div>
       <button class="btn" type="button" id="rd_save">Save image (PNG)</button>
     </div></details>
-    <details class="panel" id="firePanel"><summary>Fire</summary><div class="pbody">
-      <div id="fr_info" class="muted">No fire yet. Add &gt; Miscellaneous &gt; Fire</div>
-      <div class="grid2"><button class="btn" type="button" id="fr_add">Add fire</button><button class="btn" type="button" id="fr_del">Delete</button></div>
-      <div class="row"><label for="fr_sel">Fire</label><select id="fr_sel"></select></div>
-      <div class="row"><label for="fr_smoke">Smoke</label><input id="fr_smoke" type="checkbox"></div>
-      <div class="row"><label for="fr_size">Size</label><input id="fr_size" type="range" min="0.3" max="3" step="0.05" value="1"></div>
-      <div class="row"><label for="fr_int">Intensity</label><input id="fr_int" type="range" min="0.2" max="2" step="0.05" value="1"></div>
-      <div class="row"><span class="lbl">Position</span><input id="fr_x" type="number" step="0.5" title="X"><input id="fr_y" type="number" step="0.5" title="Y"><input id="fr_z" type="number" step="0.5" title="Z"></div>
-      <div class="muted">Flames and smoke slide around objects and pool under them.</div>
-    </div></details>
-    <details class="panel" id="gasPanel"><summary>Gas</summary><div class="pbody">
-      <div id="ga_info" class="muted">Select a gas (Add &gt; Miscellaneous &gt; Gas). Rotate it with the Rotate gizmo to aim it.</div>
-      <div class="row"><label for="ga_col">Color</label><input id="ga_col" type="color" value="#9fd8ff"></div>
-      <div class="row"><label for="ga_speed">Speed</label><input id="ga_speed" type="range" min="0.2" max="12" step="0.1" value="3"></div>
-      <div class="row"><label for="ga_cone">Cone angle</label><input id="ga_cone" type="range" min="0" max="90" step="1" value="15"></div>
-      <div class="row"><label for="ga_dens">Amount</label><input id="ga_dens" type="range" min="0.2" max="3" step="0.05" value="1"></div>
-      <div class="row"><label for="ga_size">Puff size</label><input id="ga_size" type="range" min="0.3" max="3" step="0.05" value="1"></div>
-      <div class="row"><label for="ga_life">Lifetime</label><input id="ga_life" type="range" min="1" max="10" step="0.5" value="4"></div>
-      <div class="row"><label for="ga_lift">Lift</label><input id="ga_lift" type="range" min="-2" max="2" step="0.05" value="0"></div>
-      <div class="row"><label for="ga_spread">Spread on hit</label><input id="ga_spread" type="range" min="0" max="3" step="0.05" value="1"></div>
-      <div class="muted">The two arrows show the spread direction (cone angle) in modelling mode. Gas hits geometry and spreads over it. Lift above 0 rises, below 0 sinks. The gas is only rendered in Render mode.</div>
-    </div></details>
     <details class="panel"><summary>Play mode</summary><div class="pbody">
       <div id="pl_note" class="muted"></div>
       <button class="btn" type="button" id="pl_btn">Play</button>
@@ -280,12 +299,12 @@ dd{margin:0;color:var(--fg-dim)}
       <div class="row"><label for="ph_f">Friction</label><input id="ph_f" type="range" min="0" max="1.5" step="0.05" value="0.6"><span id="ph_f_v" class="muted" style="width:26px;text-align:right">0.6</span></div>
     </div></details>
     <details class="panel"><summary>Shortcuts</summary><div class="pbody"><dl>
-      <dt>Q W E R T Y</dt><dd>Select, Move, Vertex, Triangle, Rotate, Scale</dd>
+      <dt>Q W E R T Y</dt><dd>Select, Move (Shift+W), Vertex, Triangle, Rotate, Scale</dd>
       <dt>P / B</dt><dd>Paint brush / Bucket fill (uses the Color picker)</dd>
       <dt>U</dt><dd>Texture tool: click a flat face to apply the chosen image or sprite cell</dd>
       <dt>[ and ]</dt><dd>Shrink / grow selection by 10% (Shift: half / double)</dd>
       <dt>Ctrl+C, V, D</dt><dd>Copy, paste, duplicate selection</dd>
-      <dt>A / Alt+A</dt><dd>Select all / none</dd>
+      <dt>Ctrl+A / Alt+A</dt><dd>Select all (objects, lights, fires, gas) / none</dd>
       <dt>1 / 2</dt><dd>Vertex / Face mode</dd>
       <dt>Del</dt><dd>Delete selection</dd>
       <dt>L</dt><dd>Select linked (whole object)</dd>
@@ -641,10 +660,52 @@ function mergeSel(){
   tris=tris.map(t=>[t[0],t[1],t[2]].map(i=>drop.has(i)?keep:i).concat([t[3]||null])).filter(t=>t[0]!==t[1]&&t[1]!==t[2]&&t[0]!==t[2]);
   selV=new Set([keep]);removeVerts(drop);changed();
 }
-function selectAll(){selV=new Set(verts.map((_,i)=>i));changed();}
-function selectNone(){selV=new Set();selF=-1;changed();}
+let xs=null;
+function allX(){return !!xs&&selV===xs.v&&selV.size===xs.n&&selL===xs.l&&selF===xs.f;}
+function inX(k,i){return allX()&&!!xs[k]&&xs[k].has(i);}
+function curMulti(){
+  const ls=new Set(),fs=new Set();
+  if(allX()){(xs.ls||[]).forEach(k=>{if(lights[k])ls.add(k);});(xs.fs||[]).forEach(k=>{if(fires[k])fs.add(k);});}
+  else{if(!selV.size&&selL>=0&&lights[selL])ls.add(selL);if(fireSel())fs.add(selF);}
+  return {ls,fs};
+}
+function applyMulti(ls,fs){
+  if(selV.size){selL=-1;selF=-1;}
+  else{selL=ls.size?[...ls][0]:-1;selF=(!ls.size&&fs.size)?[...fs][0]:-1;if(selF>=0)fpi=selF;}
+  selB=-1;changed();
+  if(selV.size||ls.size+fs.size>1)xs={v:selV,n:selV.size,l:selL,f:selF,ls,fs};
+  syncLightIcons();syncFireIcons();
+  if(selF>=0)updateFireUI();
+  requestRender();
+}
+function shiftPick(kind,i){
+  const M=curMulti(),S=kind==='l'?M.ls:M.fs;
+  if(S.has(i))S.delete(i);else S.add(i);
+  applyMulti(M.ls,M.fs);
+}
+function allXCenter(){
+  const c=[0,0,0];let n=0;
+  const add=p=>{c[0]+=p[0];c[1]+=p[1];c[2]+=p[2];n++;};
+  selV.forEach(i=>add(verts[i]));lights.forEach((l,i)=>{if(inX('ls',i))add(l.pos);});fires.forEach((f,i)=>{if(inX('fs',i))add(f.pos);});
+  return n?[c[0]/n,c[1]/n,c[2]/n]:[0,0,0];
+}
+function allXExtra(base){
+  if(!base||!allX())return base;
+  base.xl=lights.map((l,i)=>({i,p:l.pos.slice()})).filter(o=>o.i!==base.li&&inX('ls',o.i));
+  base.xf=fires.map((f,i)=>({i,p:f.pos.slice()})).filter(o=>o.i!==base.fi&&inX('fs',o.i));
+  return base;
+}
+function selectAll(){
+  if(!verts.length){
+    if(lights.length)selectLight(0);
+    else if(fires.length)selectFire(0);
+  }else{selV=new Set(verts.map((_,i)=>i));changed();}
+  xs={v:selV,n:selV.size,l:selL,f:selF,ls:new Set(lights.map((_,i)=>i)),fs:new Set(fires.map((_,i)=>i))};
+  syncLightIcons();syncFireIcons();requestRender();
+}
+function selectNone(){selV=new Set();selF=-1;selL=-1;changed();}
 function selectInvert(){const n=new Set();verts.forEach((_,i)=>{if(!selV.has(i))n.add(i);});selV=n;changed();}
-function newMesh(){pushUndo();verts=[];tris=[];bones=[];vb=[];ph=[];selB=-1;selV=new Set();pending=[];changed();}
+function newMesh(){pushUndo();verts=[];tris=[];bones=[];vb=[];ph=[];selB=-1;lights=[];selL=-1;fires=[];selF=-1;fpi=-1;spawnAcc=[];smokeAcc=[];gasAcc=[];saveFires();selV=new Set();pending=[];changed();}
 function median(){const m=[0,0,0];selV.forEach(i=>{m[0]+=verts[i][0];m[1]+=verts[i][1];m[2]+=verts[i][2];});const n=selV.size||1;return m.map(x=>x/n);}
 
 /* ---------- three.js scene ---------- */
@@ -1320,7 +1381,7 @@ function cleanLight(l){
   if(!l||!Array.isArray(l.pos)||l.pos.length!==3||!l.pos.every(Number.isFinite))return null;
   return {type:['spot','point','sun'].includes(l.type)?l.type:'spot',pos:l.pos.slice(),
     rot:Array.isArray(l.rot)&&l.rot.length===3&&l.rot.every(Number.isFinite)?l.rot.slice():[0,0,0],
-    scl:Number.isFinite(l.scl)?Math.max(0.1,l.scl):1,col:/^#[0-9a-f]{6}$/i.test(l.col)?l.col:'#ffffff',
+    scl:Number.isFinite(l.scl)?Math.max(0.1,l.scl):1,name:typeof l.name==='string'?l.name.slice(0,40):'',col:/^#[0-9a-f]{6}$/i.test(l.col)?l.col:'#ffffff',
     pow:Number.isFinite(l.pow)?l.pow:6,cone:Number.isFinite(l.cone)?Math.min(85,Math.max(5,l.cone)):40,shadows:l.shadows!==false};
 }
 const lightGroup=new THREE.Group();scene.add(lightGroup);
@@ -1341,7 +1402,7 @@ function syncLightIcons(){
       [[0.25,0],[-0.25,0],[0,0.25],[0,-0.25]].forEach(o=>pos.push(o[0],o[1],0,o[0],o[1],-1.4));
     }
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
-    const ln=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:i===selL?0xf0a030:new THREE.Color(l.col),depthTest:false}));
+    const ln=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:(i===selL||inX('ls',i))?0xf0a030:new THREE.Color(l.col),depthTest:false}));
     ln.renderOrder=12;ln.position.fromArray(l.pos);ln.rotation.set(l.rot[0]*D2R,l.rot[1]*D2R,l.rot[2]*D2R,'XYZ');ln.scale.setScalar(l.scl);
     lightGroup.add(ln);
   });
@@ -1368,7 +1429,7 @@ function curLight(){return !selV.size&&selL>=0?lights[selL]:null;}
 function updateLightUI(){
   const L=curLight(),ids=['lt_type','lt_col','lt_pow','lt_cone','lt_sh','lt_rx','lt_ry','lt_rz','lt_scl'];
   ids.forEach(id=>{$(id).disabled=!L;});
-  $('lt_info').textContent=L?'Light '+(selL+1)+' of '+lights.length:(lights.length?lights.length+(lights.length===1?' light':' lights')+', click one to select':'No lights yet');
+  $('lt_info').textContent=L?(L.name||'Light '+(selL+1))+' ('+(selL+1)+' of '+lights.length+')':(lights.length?lights.length+(lights.length===1?' light':' lights')+', click one to select':'No lights yet');
   if(!L)return;
   $('lt_cone').disabled=L.type!=='spot';['lt_rx','lt_ry','lt_rz'].forEach(id=>{$(id).disabled=L.type==='point';});
   const set=(id,v)=>{const el=$(id);if(document.activeElement===el)return;if(el.type==='checkbox')el.checked=!!v;else el.value=v;};
@@ -1615,7 +1676,8 @@ function updateBoneMove(x,y){
   }
   rebuild();syncBones();rigUI();requestRender();
 }
-function xBase(){
+function xBase(){return allXExtra(xBase0());}
+function xBase0(){
   if(boneGz())return {orig:[],li:null,lorig:null,modal:false,pushed:false,gizmo:true,origin:new THREE.Vector3().fromArray(boneGzCenter()),bone:rigSnap(selB)};
   const lt=!selV.size&&selL>=0;
   return {orig:[...selV].map(i=>({i,p:verts[i].slice()})),li:lt?selL:null,lorig:lt?JSON.parse(JSON.stringify(lights[selL])):null,modal:false,pushed:fireSel(),fi:fireSel()?selF:null,fo:fireSel()?fires[selF].pos.slice():null,fs:fireSel()?fires[selF].size:null,frot:fireSel()?(fires[selF].rot||[0,0,0]).slice():null,gizmo:true,origin:new THREE.Vector3().fromArray(gizmoCenter())};
@@ -1804,15 +1866,18 @@ function candidatePoint(x,y){
 
 /* ---------- selection ---------- */
 function applyClick(hit,shift){
-  if(!hit){if(!shift){selV=new Set();selB=-1;}}
+  const M=shift?curMulti():null;
+  if(!hit){if(!shift){selV=new Set();selB=-1;selL=-1;selF=-1;}}
   else{
     const hv=hitVerts(hit);
     if(shift){const all=hv.every(i=>selV.has(i));hv.forEach(i=>all?selV.delete(i):selV.add(i));}
     else selV=new Set(hv);
   }
+  if(M&&(M.ls.size||M.fs.size)){applyMulti(M.ls,M.fs);return;}
   changed();
 }
 function boxSelect(x0,y0,x1,y1,shift){
+  const M=shift?curMulti():null;
   const xa=Math.min(x0,x1),xb=Math.max(x0,x1),ya=Math.min(y0,y1),yb=Math.max(y0,y1);
   const inside=p=>p[2]>-1&&p[2]<1&&p[0]>=xa&&p[0]<=xb&&p[1]>=ya&&p[1]<=yb;
   const next=shift?new Set(selV):new Set();
@@ -1821,11 +1886,15 @@ function boxSelect(x0,y0,x1,y1,shift){
     const c=[0,0,0];t.slice(0,3).forEach(i=>{c[0]+=verts[i][0]/3;c[1]+=verts[i][1]/3;c[2]+=verts[i][2]/3;});
     if(inside(toScreen(c)))t.slice(0,3).forEach(i=>next.add(i));
   });
-  selV=next;changed();
+  if(!shift){selL=-1;selF=-1;}
+  selV=next;
+  if(M&&(M.ls.size||M.fs.size)){applyMulti(M.ls,M.fs);return;}
+  changed();
 }
 
 /* ---------- moving ---------- */
-function beginMove(x,y,modal){
+function beginMove(x,y,modal){return allXExtra(beginMove0(x,y,modal));}
+function beginMove0(x,y,modal){
   if(fireSel()){
     const fc=new THREE.Vector3().fromArray(fires[selF].pos),fd=new THREE.Vector3();camera.getWorldDirection(fd);
     const fp=new THREE.Plane().setFromNormalAndCoplanarPoint(fd,fc),fh=rayPlane(x,y,fp);if(!fh)return null;
@@ -1867,6 +1936,8 @@ function updateMove(x,y){
   mv.orig.forEach(o=>{verts[o.i]=[o.p[0]+d.x,o.p[1]+d.y,o.p[2]+d.z];});
   if(mv.lorig&&mv.li!=null)lights[mv.li].pos=[mv.lorig.pos[0]+d.x,mv.lorig.pos[1]+d.y,mv.lorig.pos[2]+d.z];
   if(mv.fo&&mv.fi!=null&&fires[mv.fi]){fires[mv.fi].pos=[mv.fo[0]+d.x,mv.fo[1]+d.y,mv.fo[2]+d.z];syncFireIcons();updateFireUI();}
+  if(mv.xl)mv.xl.forEach(o=>{lights[o.i].pos=[o.p[0]+d.x,o.p[1]+d.y,o.p[2]+d.z];});
+  if(mv.xf&&mv.xf.length){mv.xf.forEach(o=>{fires[o.i].pos=[o.p[0]+d.x,o.p[1]+d.y,o.p[2]+d.z];});syncFireIcons();updateFireUI();}
   if(mv.orig.length)rebuild();updateSelUI();syncLightIcons();
   $('coords').textContent='Move  X '+d.x.toFixed(2)+'  Y '+d.y.toFixed(2)+'  Z '+d.z.toFixed(2);
   requestRender();
@@ -1874,8 +1945,8 @@ function updateMove(x,y){
 function endMove(commit){
   if(!mv)return;
   if(!commit&&mv.bone){mv.bone.bs.forEach(a=>{bones[a[0]].p=a[1].slice();});mv.bone.vs.forEach(a=>{verts[a[0]]=a[1].slice();});}
-  if(!commit){mv.orig.forEach(o=>{verts[o.i]=o.p.slice();});if(mv.lorig&&mv.li!=null)lights[mv.li]=mv.lorig;if(mv.fo&&mv.fi!=null&&fires[mv.fi]){fires[mv.fi].pos=mv.fo.slice();if(mv.fs!=null)fires[mv.fi].size=mv.fs;if(mv.frot)fires[mv.fi].rot=mv.frot.slice();syncFireIcons();}if(mv.pushed&&!mv.fo)undoStack.pop();}
-  if(commit&&mv.fo)saveFires();
+  if(!commit){mv.orig.forEach(o=>{verts[o.i]=o.p.slice();});if(mv.lorig&&mv.li!=null)lights[mv.li]=mv.lorig;if(mv.fo&&mv.fi!=null&&fires[mv.fi]){fires[mv.fi].pos=mv.fo.slice();if(mv.fs!=null)fires[mv.fi].size=mv.fs;if(mv.frot)fires[mv.fi].rot=mv.frot.slice();syncFireIcons();}if(mv.xl)mv.xl.forEach(o=>{lights[o.i].pos=o.p.slice();});if(mv.xf){mv.xf.forEach(o=>{fires[o.i].pos=o.p.slice();});syncFireIcons();}if(mv.pushed&&!mv.fo)undoStack.pop();}
+  if(commit&&(mv.fo||(mv.xf&&mv.xf.length)))saveFires();
   mv=null;$('coords').textContent='';changed();updateHint();
 }
 function startGrab(){
@@ -1989,7 +2060,7 @@ rotGizmo.visible=sclGizmo.visible=false;scene.add(rotGizmo,sclGizmo);
   sclGizmo.add(cc,cp);sclPick.push(cp);
 }
 const gizVisible=()=>gizmo.visible||rotGizmo.visible||sclGizmo.visible;
-function gizmoCenter(){if(boneGz())return boneGzCenter();return selV.size?median():(selL>=0&&lights[selL]?lights[selL].pos.slice():(fireSel()?fires[selF].pos.slice():[0,0,0]));}
+function gizmoCenter(){if(boneGz())return boneGzCenter();if(allX())return allXCenter();return selV.size?median():(selL>=0&&lights[selL]?lights[selL].pos.slice():(fireSel()?fires[selF].pos.slice():[0,0,0]));}
 const _gd=new THREE.Vector3(),_gt=new THREE.Vector3();
 function updateGizmo(){
   const has=selV.size>0||(selL>=0&&!!lights[selL])||fireSel()||(boneGz()&&tool!=='scale');
@@ -2178,7 +2249,7 @@ function syncUI(){
   document.querySelectorAll('[data-axis]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.axis===(axisLock||'')));
   vp.dataset.tool=tool;updateInfo();updateHint();
 }
-function changed(){if(selV.size&&selL>=0)selL=-1;if(selF>=0&&(selV.size||selL>=0))selF=-1;if(selL>=0)selB=-1;syncVB();rebuild();updateSelUI();syncLightIcons();syncFireIcons();updateLightUI();syncBones();rigUI();updateStats();updateOverlay();requestRender();saveSoon();}
+function changed(){if(selV.size&&selL>=0)selL=-1;if(selF>=0&&(selV.size||selL>=0))selF=-1;if(selL>=0)selB=-1;syncVB();rebuild();updateSelUI();syncLightIcons();syncFireIcons();updateLightUI();syncBones();rigUI();updateProps();updateStats();updateOverlay();requestRender();saveSoon();}
 function setTool(t){tool=t;pending=[];hover=null;syncUI();updatePlaneGrid();updateOverlay();requestRender();}
 function setMode(m){mode=m;syncUI();}
 
@@ -2214,7 +2285,7 @@ vp.addEventListener('pointerdown',e=>{
   if(poseOn&&selB>=0&&bones[selB]&&$('rigPanel').open&&(tool==='select'||tool==='move'||tool==='rotate'||tool==='scale')){
     vp.setPointerCapture(e.pointerId);drag={kind:'bonelock',empty:pickElement(p.x,p.y)==null&&pickLight(p.x,p.y)<0};return;
   }
-  if(tool==='select'||tool==='move'||tool==='rotate'||tool==='scale'){const lh=pickLight(p.x,p.y);if(lh>=0){selectLight(lh);return;}const fh=R.on?-1:pickFire(p.x,p.y);if(fh>=0){selectFire(fh);return;}}
+  if(tool==='select'||tool==='move'||tool==='rotate'||tool==='scale'){const lh=pickLight(p.x,p.y);if(lh>=0){if(e.shiftKey&&(selV.size||selL>=0||fireSel()||allX()))shiftPick('l',lh);else selectLight(lh);return;}const fh=R.on?-1:pickFire(p.x,p.y);if(fh>=0){if(e.shiftKey&&(selV.size||selL>=0||fireSel()||allX()))shiftPick('f',fh);else selectFire(fh);return;}}
   vp.setPointerCapture(e.pointerId);
   const hit=pickElement(p.x,p.y);
   drag={kind:'click',sx:p.x,sy:p.y,hit,shift:e.shiftKey,moved:false,canMove:false};
@@ -2303,7 +2374,7 @@ $('snapSize').addEventListener('change',e=>{snapSize=parseFloat(e.target.value)|
 const MENUS={
   File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export'],['Import FBX...','importfbx'],['Export FBX...','exportfbx'],['Import Blend...','importblend']],
   Edit:[['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Shift+Z'],null,['Copy','copy','Ctrl+C'],['Paste','paste','Ctrl+V'],['Duplicate','dup','Ctrl+D'],['Scale','scale'],null,['Delete','del','Del'],['Flip Normals','flip'],['Subdivide','subdiv'],['Merge at Center','merge']],
-  Add:[['Triangle','add:tri'],['Quad','add:quad'],['Cube','add:cube'],['Pyramid','add:pyr'],['Octahedron','add:oct'],['Light','add:light'],null,['Miscellaneous',null],['Fire','add:fire'],['Gas','add:gas']],
+  Add:[['Triangle','add:tri'],['Quad','add:quad'],['Cube','add:cube'],['Pyramid','add:pyr'],['Octahedron','add:oct'],null,['Miscellaneous',null],['Light','add:light'],['Fire','add:fire'],['Gas','add:gas']],
   Select:[['All','selall','A'],['None','selnone','Alt+A'],['Invert','selinv','Ctrl+I'],['Linked (Object)','linked','L']],
   View:[['Frame Selected','frame','F'],['Front','view:front','Num 1'],['Right','view:right','Num 3'],['Top','view:top','Num 7'],['Persp / Ortho','ortho','Num 5'],['Solid / Wire','wire','Z'],['Render Preview','render'],['Save Render...','saverender']]
 };
@@ -3329,6 +3400,7 @@ document.addEventListener('keydown',e=>{
   if(ctrl){
     if(c==='KeyZ'){e.preventDefault();e.shiftKey?redo():undo();}
     else if(c==='KeyY'){e.preventDefault();redo();}
+    else if(c==='KeyA'){e.preventDefault();selectAll();}
     else if(c==='KeyI'){e.preventDefault();selectInvert();}
     else if(c==='KeyC'){e.preventDefault();copySel();}
     else if(c==='KeyV'){e.preventDefault();pasteClip();}
@@ -3349,7 +3421,7 @@ document.addEventListener('keydown',e=>{
   }
   switch(c){
     case 'KeyQ':setTool('select');break;
-    case 'KeyW':setTool('move');break;
+    case 'KeyW':if(e.shiftKey)setTool('move');break;
     case 'KeyE':setTool('vertex');break;
     case 'KeyR':setTool('tri');break;
     case 'KeyT':setTool('rotate');break;
@@ -3361,7 +3433,7 @@ document.addEventListener('keydown',e=>{
     case 'BracketLeft':stepScale(e.shiftKey?0.5:1/1.1);break;
     case 'KeyL':selectLinked();break;
     case 'Tab':e.preventDefault();selectLinked();break;
-    case 'KeyA':e.altKey?selectNone():selectAll();break;
+    case 'KeyA':if(e.altKey)selectNone();break;
     case 'KeyF':case 'Home':frame();break;
     case 'KeyZ':toggleWire();break;
     case 'Digit1':setMode('v');break;
@@ -3412,12 +3484,38 @@ $('tx_prev').addEventListener('click',e=>{
   $('tx_frame').value=row*c.cols+col+1;drawTexPrev();
 });
 
+/* ---------- combined Properties panel ---------- */
+function propTarget(){
+  const L=curLight();if(L)return {kind:'light',o:L,def:'Light '+(selL+1)};
+  if(fireSel()){const f=fires[selF];return {kind:'fire',o:f,def:(f.gas?'Gas ':'Fire ')+(selF+1)};}
+  return null;
+}
+function updateProps(){
+  updateWorkspace();
+  const t=propTarget(),F=t&&t.kind==='fire'?t.o:null;
+  $('pp_none').hidden=!!t;$('pp_namerow').hidden=!t;
+  $('ppLight').hidden=!(t&&t.kind==='light');
+  $('firePanel').hidden=!(F&&!F.gas);$('gasPanel').hidden=!(F&&F.gas);
+  const n=$('pp_name');
+  if(t){n.placeholder=t.def;if(document.activeElement!==n)n.value=t.o.name||'';}
+  else if(document.activeElement!==n)n.value='';
+}
+let ppPushed=false;
+$('pp_name').addEventListener('input',e=>{
+  const t=propTarget();if(!t)return;
+  const v=e.target.value.slice(0,40);
+  if(t.kind==='light'){if(!ppPushed){pushUndo();ppPushed=true;}t.o.name=v;updateLightUI();saveSoon();updateWorkspace();}
+  else{t.o.name=v;saveFires();$('fr_sel').innerHTML='';updateFireUI();}
+});
+$('pp_name').addEventListener('change',()=>{ppPushed=false;});
+$('pp_name').addEventListener('keydown',e=>{if(e.key==='Enter')e.target.blur();});
+
 /* ---------- fire (Add > Miscellaneous) ---------- */
 const FIRE_KEY='carpet-fires-v1';
 let fires=[],selF=-1,fpi=-1;
 const GCL=(v,a,b,d)=>Number.isFinite(+v)?Math.min(b,Math.max(a,+v)):d;
 function gasNorm(f){return {gas:true,color:/^#[0-9a-f]{6}$/i.test(f.color)?f.color:'#9fd8ff',speed:GCL(f.speed,.2,12,3),cone:GCL(f.cone,0,90,15),dens:GCL(f.dens,.2,3,1),life:GCL(f.life,1,10,4),lift:GCL(f.lift,-2,2,0),spread:GCL(f.spread,0,3,1)};}
-try{const o=JSON.parse(localStorage.getItem(FIRE_KEY)||'[]');if(Array.isArray(o))fires=o.filter(f=>f&&Array.isArray(f.pos)&&f.pos.length===3&&f.pos.every(Number.isFinite)).map(f=>({pos:f.pos,smoke:!!f.smoke,size:Math.min(3,Math.max(.3,+f.size||1)),inten:Math.min(2,Math.max(.2,+f.inten||1)),rot:(Array.isArray(f.rot)&&f.rot.length===3&&f.rot.every(Number.isFinite))?f.rot:[0,0,0],...(f.gas?gasNorm(f):{})}));}catch(e){}
+try{const o=JSON.parse(localStorage.getItem(FIRE_KEY)||'[]');if(Array.isArray(o))fires=o.filter(f=>f&&Array.isArray(f.pos)&&f.pos.length===3&&f.pos.every(Number.isFinite)).map(f=>({name:typeof f.name==='string'?f.name.slice(0,40):'',pos:f.pos,smoke:!!f.smoke,size:Math.min(3,Math.max(.3,+f.size||1)),inten:Math.min(2,Math.max(.2,+f.inten||1)),rot:(Array.isArray(f.rot)&&f.rot.length===3&&f.rot.every(Number.isFinite))?f.rot:[0,0,0],...(!f.gas&&/^#[0-9a-f]{6}$/i.test(f.color)?{color:f.color}:{}),...(f.gas?gasNorm(f):{})}));}catch(e){}
 fpi=fires.length?0:-1;
 function saveFires(){try{localStorage.setItem(FIRE_KEY,JSON.stringify(fires));}catch(e){}}
 const fireTex=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d'),g=x.createRadialGradient(32,32,0,32,32,32);
@@ -3545,7 +3643,9 @@ function fireWrite(){
   flames.forEach((q,i)=>{
     const t=q.age/q.life;P[i*3]=q.p[0];P[i*3+1]=q.p[1];P[i*3+2]=q.p[2];
     S[i]=q.s0*(1-t*.75);
-    let r,gg,b;if(t<.35){const k=t/.35;r=1;gg=.95-.45*k;b=.55-.45*k;}else{const k=(t-.35)/.65;r=1-.45*k;gg=.5-.4*k;b=.1-.07*k;}
+    let r,gg,b;const fc=fires[q.f]&&fires[q.f].color;
+    if(fc){const bc=new THREE.Color(fc);if(t<.35){const k=t/.35;r=bc.r+(1-bc.r)*.6*(1-k);gg=bc.g+(1-bc.g)*.6*(1-k);b=bc.b+(1-bc.b)*.6*(1-k);}else{const k=(t-.35)/.65,m=1-.55*k;r=bc.r*m;gg=bc.g*m;b=bc.b*m;}}
+    else if(t<.35){const k=t/.35;r=1;gg=.95-.45*k;b=.55-.45*k;}else{const k=(t-.35)/.65;r=1-.45*k;gg=.5-.4*k;b=.1-.07*k;}
     C[i*4]=r;C[i*4+1]=gg;C[i*4+2]=b;C[i*4+3]=Math.min(1,t*8)*Math.pow(1-t,1.2)*.85;
   });
   g.setDrawRange(0,flames.length);['position','size','col'].forEach(n=>g.attributes[n].needsUpdate=true);
@@ -3557,7 +3657,7 @@ function fireWrite(){
   });
   g.setDrawRange(0,smokes.length);['position','size','col'].forEach(n=>g.attributes[n].needsUpdate=true);
   const lf=fires.find(f=>!f.gas);
-  if(lf&&R.on){fireLight.visible=true;fireLight.position.set(lf.pos[0],lf.pos[1],lf.pos[2]+.8*lf.size);fireLight.intensity=(1.6+Math.sin(fireT*17)*.25+Math.sin(fireT*7.3)*.2)*lf.inten*lf.size;fireLight.distance=6*lf.size;}
+  if(lf&&R.on){fireLight.visible=true;fireLight.position.set(lf.pos[0],lf.pos[1],lf.pos[2]+.8*lf.size);fireLight.intensity=(1.6+Math.sin(fireT*17)*.25+Math.sin(fireT*7.3)*.2)*lf.inten*lf.size;fireLight.distance=6*lf.size;fireLight.color.set(lf.color||'#ff8830');}
   else fireLight.visible=false;
 }
 let fireLast=0;
@@ -3572,29 +3672,31 @@ function fireKick(){if(!fireRaf){fireLast=performance.now();fireRaf=requestAnima
 function curFire(){return fpi>=0?(fires[fpi]||null):null;}
 function updateFireUI(){
   const sel=$('fr_sel');
-  if(sel.options.length!==fires.length){sel.innerHTML='';fires.forEach((_,i)=>{const o=document.createElement('option');o.value=i;o.textContent=(fires[i].gas?'Gas ':'Fire ')+(i+1);sel.appendChild(o);});}
+  if(sel.options.length!==fires.length){sel.innerHTML='';fires.forEach((_,i)=>{const o=document.createElement('option');o.value=i;o.textContent=fires[i].name||((fires[i].gas?'Gas ':'Fire ')+(i+1));sel.appendChild(o);});}
   const f=curFire();
-  $('fr_info').textContent=f?(f.gas?'Gas ':'Fire ')+(fpi+1)+' of '+fires.length:'No fire yet. Add > Miscellaneous > Fire';
-  if(f){sel.value=fpi;$('fr_smoke').checked=f.smoke;$('fr_size').value=f.size;$('fr_int').value=f.inten;
-    ['x','y','z'].forEach((k,j)=>{if(document.activeElement!==$('fr_'+k))$('fr_'+k).value=Math.round(f.pos[j]*1000)/1000;});}
-  ['fr_sel','fr_smoke','fr_size','fr_int','fr_x','fr_y','fr_z','fr_del'].forEach(id=>{$(id).disabled=!f;});
+  $('fr_info').textContent=f?(f.name||(f.gas?'Gas ':'Fire ')+(fpi+1))+' ('+(fpi+1)+' of '+fires.length+')':'No fire yet. Add > Miscellaneous > Fire';
+  if(f){sel.value=fpi;$('fr_smoke').checked=f.smoke;$('fr_size').value=f.size;$('fr_int').value=f.inten;$('fr_col').value=f.color||'#ff7a1a';
+    ['x','y','z'].forEach((k,j)=>{if(document.activeElement!==$('fr_'+k))$('fr_'+k).value=Math.round(f.pos[j]*1000)/1000;if(document.activeElement!==$('ga_'+k))$('ga_'+k).value=Math.round(f.pos[j]*1000)/1000;});
+    const rr=f.rot||[0,0,0];['x','y','z'].forEach((k,j)=>{const v=Math.round(rr[j]*100)/100;if(document.activeElement!==$('fr_r'+k))$('fr_r'+k).value=v;if(document.activeElement!==$('ga_r'+k))$('ga_r'+k).value=v;});}
+  ['fr_sel','fr_smoke','fr_size','fr_int','fr_col','fr_x','fr_y','fr_z'].forEach(id=>{$(id).disabled=!f;});
   if(f&&f.gas){$('fr_smoke').disabled=true;$('fr_int').disabled=true;}
   const gs=!!(f&&f.gas);
-  $('ga_info').textContent=gs?'Gas '+(fpi+1)+' of '+fires.length:'Select a gas (Add > Miscellaneous > Gas). Rotate it with the Rotate gizmo to aim it. Two arrows show how it spreads; the gas itself only shows in Render mode.';
+  $('ga_info').textContent=gs?(f.name||'Gas '+(fpi+1))+' ('+(fpi+1)+' of '+fires.length+')':'Select a gas (Add > Miscellaneous > Gas). Rotate it with the Rotate gizmo to aim it. Two arrows show how it spreads; the gas itself only shows in Render mode.';
   GA_IDS.forEach(([id,k])=>{const e=$(id);e.disabled=!gs;if(gs)e.value=f[k];});
+  updateProps();
 }
 const GA_IDS=[['ga_col','color'],['ga_speed','speed'],['ga_cone','cone'],['ga_dens','dens'],['ga_size','size'],['ga_life','life'],['ga_lift','lift'],['ga_spread','spread']];
 GA_IDS.forEach(([id,k])=>$(id).addEventListener('input',e=>{const f=curFire();if(!f||!f.gas)return;
-  f[k]=k==='color'?e.target.value:+e.target.value;saveFires();if(k==='size'||k==='cone'||k==='speed')syncFireIcons();fireKick();requestRender();}));
+  f[k]=k==='color'?e.target.value:+e.target.value;saveFires();if(k==='size'||k==='cone'||k==='speed'||k==='color')syncFireIcons();fireKick();requestRender();}));
 function addGas(){
   const f=Object.assign({pos:[Math.round(view.target.x*2)/2,Math.round(view.target.y*2)/2,0],smoke:false,size:1,inten:1,rot:[0,0,0]},gasNorm({}));
   fires.push(f);saveFires();selectFire(fires.length-1);fireKick();
-  const d=$('gasPanel');if(d)d.open=true;flash('Added gas (flows in Render mode)');
+  const d=$('propsPanel');if(d)d.open=true;flash('Added gas (flows in Render mode)');
 }
 function addFire(){
   const f={pos:[Math.round(view.target.x*2)/2,Math.round(view.target.y*2)/2,0],smoke:false,size:1,inten:1,rot:[0,0,0]};
   fires.push(f);saveFires();selectFire(fires.length-1);fireKick();
-  const d=$('firePanel');if(d)d.open=true;flash('Added fire (burns in Render mode)');
+  const d=$('propsPanel');if(d)d.open=true;flash('Added fire (burns in Render mode)');
 }
 function delFire(){
   const k=selF>=0?selF:fpi;if(k<0||!fires[k])return;
@@ -3603,14 +3705,15 @@ function delFire(){
   flames=flames.filter(q=>q.f!==k);smokes=smokes.filter(q=>q.f!==k);flames.forEach(q=>{if(q.f>k)q.f--;});smokes.forEach(q=>{if(q.f>k)q.f--;});
   selF=-1;fpi=fires.length?Math.min(k,fires.length-1):-1;saveFires();syncFireIcons();updateFireUI();fireKick();requestRender();
 }
-$('fr_add').addEventListener('click',addFire);
-$('fr_del').addEventListener('click',delFire);
 $('fr_sel').addEventListener('change',e=>selectFire(+e.target.value));
 $('fr_smoke').addEventListener('change',e=>{const f=curFire();if(f){f.smoke=e.target.checked;saveFires();fireKick();}});
 $('fr_size').addEventListener('input',e=>{const f=curFire();if(f){f.size=+e.target.value;saveFires();syncFireIcons();}});
 $('fr_int').addEventListener('input',e=>{const f=curFire();if(f){f.inten=+e.target.value;saveFires();}});
+$('fr_col').addEventListener('input',e=>{const f=curFire();if(f&&!f.gas){f.color=e.target.value;saveFires();syncFireIcons();fireKick();requestRender();}});
 ['x','y','z'].forEach((k,j)=>$('fr_'+k).addEventListener('change',e=>{const f=curFire(),v=parseFloat(e.target.value);if(f&&Number.isFinite(v)){f.pos[j]=v;saveFires();syncFireIcons();requestRender();}}));
+['x','y','z'].forEach((k,j)=>$('ga_'+k).addEventListener('change',e=>{const f=curFire(),v=parseFloat(e.target.value);if(f&&Number.isFinite(v)){f.pos[j]=v;saveFires();syncFireIcons();requestRender();}}));
 /* viewport icon, selection, gizmo hooks */
+['fr_r','ga_r'].forEach(p=>['x','y','z'].forEach((k,j)=>$(p+k).addEventListener('change',e=>{const f=curFire(),v=parseFloat(e.target.value);if(f&&Number.isFinite(v)){if(!f.rot)f.rot=[0,0,0];f.rot[j]=v;saveFires();syncFireIcons();fireKick();requestRender();}})));
 const fireIcons=new THREE.Group();scene.add(fireIcons);
 function fireSel(){return selF>=0&&!!fires[selF]&&!selV.size&&selL<0&&selB<0;}
 function syncFireIcons(){
@@ -3624,20 +3727,20 @@ function syncFireIcons(){
         gp.push(ex,0,ez,ex-dx*hs+px*hs*.6,0,ez-dz*hs+pz*hs*.6,ex,0,ez,ex-dx*hs-px*hs*.6,0,ez-dz*hs-pz*hs*.6);
         gp.push(ex,0,ez,ex-dx*hs,hs*.6,ez-dz*hs,ex,0,ez,ex-dx*hs,-hs*.6,ez-dz*hs);});
       const gg=new THREE.BufferGeometry();gg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(gp),3));
-      const gl=new THREE.LineSegments(gg,new THREE.LineBasicMaterial({color:i===selF&&fireSel()?0xf0a030:0x38b6ff,depthTest:false}));
+      const gl=new THREE.LineSegments(gg,new THREE.LineBasicMaterial({color:(i===selF&&fireSel())||inX('fs',i)?0xf0a030:new THREE.Color(f.color),depthTest:false}));
       gl.renderOrder=12;if(f.rot)gl.rotation.set(f.rot[0]*D2R,f.rot[1]*D2R,f.rot[2]*D2R,'XYZ');gl.position.fromArray(f.pos);gl.scale.setScalar(f.size);fireIcons.add(gl);return;}
     const pos=[],prof=[[0,.02],[.16,.12],[.2,.3],[.11,.55],[0,.85]];
     for(let k=0;k<prof.length-1;k++){const a=prof[k],b=prof[k+1];
       pos.push(a[0],0,a[1],b[0],0,b[1],-a[0],0,a[1],-b[0],0,b[1],0,a[0],a[1],0,b[0],b[1],0,-a[0],a[1],0,-b[0],b[1]);}
     for(let k=0;k<20;k++){const a=k/20*6.2832,b=(k+1)/20*6.2832;pos.push(Math.cos(a)*.22,Math.sin(a)*.22,0,Math.cos(b)*.22,Math.sin(b)*.22,0);}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
-    const ln=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:i===selF&&fireSel()?0xf0a030:0xff5a1e,depthTest:false}));
+    const ln=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:(i===selF&&fireSel())||inX('fs',i)?0xf0a030:(f.color?new THREE.Color(f.color):0xff5a1e),depthTest:false}));
     ln.renderOrder=12;if(f.rot)ln.rotation.set(f.rot[0]*D2R,f.rot[1]*D2R,f.rot[2]*D2R,'XYZ');ln.position.fromArray(f.pos);ln.scale.setScalar(f.size);fireIcons.add(ln);
   });
   requestRender();
 }
 function pickFire(x,y){
-  let best=-1,bd=16*16;
+  let best=-1,bd=40*40;
   fires.forEach((f,i)=>{const p=toScreen([f.pos[0],f.pos[1],f.pos[2]+.3*f.size]);if(p[2]<-1||p[2]>1)return;const d=(p[0]-x)**2+(p[1]-y)**2;if(d<bd){bd=d;best=i;}});
   return best;
 }
@@ -3645,6 +3748,45 @@ function selectFire(i){selV=new Set();selL=-1;selB=-1;selF=i;fpi=i;changed();upd
 const _srFire=setRender;
 setRender=function(on){_srFire(on);fireKick();};
 syncFireIcons();updateFireUI();if(fires.length)fireKick();
+
+/* ---------- workspace ---------- */
+const WS_ICON={
+  mesh:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
+  light:'<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  fire:'<path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3.3 2-4.5.3 1.2 1 2 1.8 2.3C10.5 8.5 11 5.5 12 3z"/>',
+  gas:'<path d="M7 18a4 4 0 0 1-.5-7.9A5.5 5.5 0 0 1 17 8.5a4.8 4.8 0 0 1 .5 9.5z"/><path d="M9 21h6"/>',
+  bone:'<path d="M7 7a2 2 0 1 1 1.2-3.6A2 2 0 1 1 10.5 6.5L17.5 13.5a2 2 0 1 1 3.4 1.6 2 2 0 1 1-3.6 1.4 2 2 0 1 1-1.8-1.7L9.5 8.4A2 2 0 0 1 7 7z"/>'
+};
+function wsComponents(){
+  const par=verts.map((_,i)=>i),fd=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
+  const used=new Uint8Array(verts.length);
+  tris.forEach(t=>{for(let k=0;k<3;k++)used[t[k]]=1;const a=fd(t[0]),b=fd(t[1]),c=fd(t[2]);par[b]=a;par[fd(c)]=a;});
+  const g=new Map();
+  verts.forEach((_,i)=>{if(!used[i])return;const r=fd(i);if(!g.has(r))g.set(r,[]);g.get(r).push(i);});
+  const loose=[];verts.forEach((_,i)=>{if(!used[i])loose.push(i);});
+  return {comps:[...g.values()],loose};
+}
+function updateWorkspace(){
+  const P=$('wsPanel');if(!P||!P.open)return;
+  try{
+    const L=$('wsList'),items=[],{comps,loose}=wsComponents();
+    const selAll=ids=>ids.length>0&&selV.size>0&&ids.every(i=>selV.has(i));
+    comps.forEach((ids,n)=>items.push({k:'mesh',name:'Mesh '+(n+1),sel:selAll(ids),go:()=>{selV=new Set(ids);selL=-1;selF=-1;selB=-1;changed();}}));
+    if(loose.length)items.push({k:'mesh',name:'Loose vertices',sel:selAll(loose),go:()=>{selV=new Set(loose);selL=-1;selF=-1;selB=-1;changed();}});
+    lights.forEach((l,i)=>items.push({k:'light',name:l.name||'Light '+(i+1),sel:!selV.size&&selL===i,go:()=>selectLight(i)}));
+    fires.forEach((f,i)=>items.push({k:f.gas?'gas':'fire',name:f.name||((f.gas?'Gas ':'Fire ')+(i+1)),sel:fireSel()&&selF===i,go:()=>selectFire(i)}));
+    bones.forEach((b,i)=>items.push({k:'bone',name:b.n,sel:selB===i,go:()=>selectBone(i)}));
+    L.innerHTML='';
+    if(!items.length){const m=document.createElement('div');m.className='muted';m.textContent='Nothing in the scene yet';L.appendChild(m);return;}
+    items.forEach(it=>{
+      const b=document.createElement('button');b.type='button';b.className='wsItem k-'+it.k+(it.sel?' sel':'');
+      b.innerHTML='<svg viewBox="0 0 24 24">'+WS_ICON[it.k]+'</svg>';
+      const sp=document.createElement('span');sp.textContent=it.name;b.appendChild(sp);
+      b.addEventListener('click',it.go);L.appendChild(b);
+    });
+  }catch(e){}
+}
+$('wsPanel').addEventListener('toggle',updateWorkspace);
 
 /* ---------- start ---------- */
 function measure(){
