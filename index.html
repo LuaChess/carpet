@@ -971,16 +971,51 @@ function plFrame(t){
     if(dist>1e-9){
       const dir=new THREE.Vector3(mx/dist,my/dist,0);
       player.rotation.z=Math.atan2(-dir.x,dir.y);
+      const pushed=new Set();
       [0.55,1.3].forEach(hz=>{
         const h=plCast(new THREE.Vector3(PL.p.x,PL.p.y,PL.p.z+hz),dir,PLR+dist);
         if(!h||!h.face)return;
         const n=h.face.normal.clone();
         if(Math.abs(n.z)>0.7)return;
         n.z=0;if(n.lengthSq()<1e-9)return;n.normalize();if(n.dot(dir)>0)n.negate();
+        if(PH&&PH.bodies&&PH.bodies.length){if(!PH.tb){PH.tb=new Map();PH.bodies.forEach(b=>b.ti.forEach(ti=>PH.tb.set(ti,b)));}if(PH.tb.get(h.faceIndex))return;}
         const into=mx*n.x+my*n.y;
         if(into<0){mx-=n.x*into;my-=n.y*into;}
         if(h.distance<PLR){const pu=PLR-h.distance;mx+=n.x*pu;my+=n.y*pu;}
       });
+      if(PH&&PH.bodies&&PH.bodies.length){
+        let qx=PL.p.x+mx,qy=PL.p.y+my;
+        PH.bodies.forEach(b=>{
+          const ddx=qx-b.pos.x,ddy=qy-b.pos.y,ddz=PL.p.z+PLH/2-b.pos.z,mm=b.rad+PLR+PLH;
+          if(ddx*ddx+ddy*ddy+ddz*ddz>mm*mm)return;
+          const S=phBodySoup(b),a=S.a,bb=S.bb,ox=qx,oy=qy;
+          [0.35,0.8,1.25,1.6].forEach(hz=>{
+            const sx=qx,sy=qy,sz=PL.p.z+hz;let best=1e30,cx=0,cy=0,cz=0;
+            for(let k=0;k<S.n;k++){
+              const o=k*6;
+              if(sx<bb[o]-PLR||sx>bb[o+3]+PLR||sy<bb[o+1]-PLR||sy>bb[o+4]+PLR||sz<bb[o+2]-PLR||sz>bb[o+5]+PLR)continue;
+              phClosest(sx,sy,sz,a,k*9);
+              if(phCP[2]<PL.p.z+0.3)continue;
+              const ex=phCP[0]-sx,ey=phCP[1]-sy,ez=phCP[2]-sz,d2=ex*ex+ey*ey+ez*ez;
+              if(d2<best){best=d2;cx=phCP[0];cy=phCP[1];cz=phCP[2];}
+            }
+            if(best>=PLR*PLR)return;
+            let hx=sx-cx,hy=sy-cy;const hl=Math.hypot(hx,hy),dz=sz-cz;
+            if(hl<1e-6){hx=sx-b.pos.x;hy=sy-b.pos.y;const l=Math.hypot(hx,hy)||1;hx/=l;hy/=l;}else{hx/=hl;hy/=hl;}
+            const need=Math.sqrt(Math.max(0,PLR*PLR-dz*dz)),push=need-(hl<1e-6?0:hl);
+            if(push>0){qx+=hx*push;qy+=hy*push;}
+          });
+          const tx=qx-ox,ty=qy-oy,tl=Math.hypot(tx,ty);
+          if(tl>1e-9){
+            const pf=1/(1+(b.mass||1)),nx=-tx/tl,ny=-ty/tl;
+            qx=ox+tx*(1-pf);qy=oy+ty*(1-pf);
+            const tv=walk*pf,cur=b.v.x*nx+b.v.y*ny;
+            if(cur<tv){const d=(tv-cur)*0.6;b.v.x+=nx*d;b.v.y+=ny*d;}
+            b.sl=0;
+          }
+        });
+        mx=qx-PL.p.x;my=qy-PL.p.y;
+      }
       PL.p.x+=mx;PL.p.y+=my;
     }
   }
@@ -1282,6 +1317,7 @@ function physStart(){
       b.nt=b.tix.length;b.ti=b.tix;b.tl=new Float32Array(b.nt*9);
       b.tix.forEach((ti,j)=>{for(let k=0;k<3;k++){const v=verts[tris[ti][k]];b.tl[j*9+k*3]=v[0]-cx;b.tl[j*9+k*3+1]=v[1]-cy;b.tl[j*9+k*3+2]=v[2]-cz;}});
       let rad=0;vs.forEach(i=>{rad=Math.max(rad,Math.hypot(verts[i][0]-cx,verts[i][1]-cy,verts[i][2]-cz));});b.rad=rad;
+      {const lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];vs.forEach(i=>{for(let k=0;k<3;k++){const q=verts[i][k];if(q<lo[k])lo[k]=q;if(q>hi[k])hi[k]=q;}});b.mass=Math.max(0.05,Math.max(0.1,hi[0]-lo[0])*Math.max(0.1,hi[1]-lo[1])*Math.max(0.1,hi[2]-lo[2]));}
       b.pos=new THREE.Vector3(cx,cy,cz);b.q=new THREE.Quaternion();b.v=new THREE.Vector3();b.w=new THREE.Vector3();
       b.push=new THREE.Vector3();b.pc=0;b.hit=false;b.sl=0;b.R=new Array(9).fill(0);b.soup=null;phIw(b);
     });
@@ -2380,9 +2416,85 @@ $('snapSize').addEventListener('change',e=>{snapSize=parseFloat(e.target.value)|
   pushUndo();selV.forEach(i=>{verts[i][k]+=d;});changed();
 }));
 
+/* ---------- .carpet project files ---------- */
+function carpetPack(){
+  syncVB();phSync();vnSync();
+  return JSON.stringify({format:'carpet',version:1,mesh:{v:verts,t:tris,l:lights,b:bones,vb:vb,ph:ph,n:vn},fires:fires,images:images.map(m=>({name:m.name,url:m.url}))});
+}
+function carpetRead(txt){
+  let o;try{o=JSON.parse(txt);}catch(e){return null;}
+  if(!o||o.format!=='carpet'||!o.mesh||!validMesh(o.mesh))return null;
+  return o;
+}
+function carpetFires(a){
+  if(!Array.isArray(a))return [];
+  return a.filter(f=>f&&Array.isArray(f.pos)&&f.pos.length===3&&f.pos.every(Number.isFinite)).map(f=>({name:typeof f.name==='string'?f.name.slice(0,40):'',pos:f.pos,smoke:!!f.smoke,size:Math.min(3,Math.max(.3,+f.size||1)),inten:Math.min(2,Math.max(.2,+f.inten||1)),rot:(Array.isArray(f.rot)&&f.rot.length===3&&f.rot.every(Number.isFinite))?f.rot:[0,0,0],...(!f.gas&&/^#[0-9a-f]{6}$/i.test(f.color)?{color:f.color}:{}),...(f.gas?gasNorm(f):{})}));
+}
+function carpetImages(o,replace){
+  if(replace){images=[];atlas=null;atlasDirty=true;}
+  const map=[];
+  (Array.isArray(o.images)?o.images:[]).forEach((m,i)=>{
+    map[i]=(m&&typeof m.url==='string'&&m.url.indexOf('data:image/')===0)?addImage(String(m.name||'image'),m.url,true):-1;
+  });
+  saveImages();updateTexUI();
+  return map;
+}
+function carpetTri(t,base,imap){
+  let k=t[3]||null;
+  if(typeof k==='string'&&k.charCodeAt(0)===84){
+    const m=/^T(\d+):(.+)$/.exec(k);
+    if(m){const ni=imap[+m[1]];k=(ni!=null&&ni>=0)?'T'+ni+':'+m[2]:null;}
+  }
+  return [t[0]+base,t[1]+base,t[2]+base,k];
+}
+function saveProject(){
+  downloadBlob(new Blob([carpetPack()],{type:'application/octet-stream'}),'project.carpet');
+  flash('Saved project.carpet');
+}
+function pickCarpet(cb){
+  const inp=document.createElement('input');inp.type='file';inp.accept='.carpet';
+  inp.addEventListener('change',()=>{
+    const f=inp.files&&inp.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{const o=carpetRead(String(r.result));if(!o){flash('Could not read that .carpet file');return;}cb(o);};
+    r.onerror=()=>flash('Could not read that .carpet file');
+    r.readAsText(f);
+  });
+  inp.click();
+}
+function openProject(){
+  pickCarpet(o=>{
+    pushUndo();
+    const m=o.mesh,imap=carpetImages(o,true);
+    verts=m.v;tris=m.t.map(t=>carpetTri(t,0,imap));
+    lights=Array.isArray(m.l)?m.l.map(cleanLight).filter(Boolean).slice(0,4):[];
+    bones=cleanBones(m.b);vb=Array.isArray(m.vb)?m.vb:[];ph=Array.isArray(m.ph)?m.ph:[];vn=Array.isArray(m.n)?m.n:[];
+    selB=-1;selL=-1;selV=new Set();pending=[];
+    fires=carpetFires(o.fires);selF=-1;fpi=fires.length?0:-1;spawnAcc=[];smokeAcc=[];gasAcc=[];saveFires();
+    syncVB();changed();frame();saveSoon();
+    flash('Opened project: '+verts.length+' vertices, '+tris.length+' triangles');
+  });
+}
+function importProject(){
+  pickCarpet(o=>{
+    pushUndo();
+    syncVB();phSync();vnSync();
+    const m=o.mesh,base=verts.length,bb=bones.length,imap=carpetImages(o,false);
+    const nb=cleanBones(m.b),nvb=Array.isArray(m.vb)?m.vb:[],nph=Array.isArray(m.ph)?m.ph:[],nvn=Array.isArray(m.n)?m.n:[];
+    m.v.forEach((v,i)=>{verts.push(v);const k=nvb[i];vb.push(Number.isInteger(k)&&k>=0&&k<nb.length?k+bb:-1);ph.push(nph[i]?1:0);vn.push(nvn[i]||0);});
+    m.t.forEach(t=>tris.push(carpetTri(t,base,imap)));
+    nb.forEach(b=>{b.par=b.par>=0?b.par+bb:-1;bones.push(b);});
+    (Array.isArray(m.l)?m.l.map(cleanLight).filter(Boolean):[]).forEach(L=>{if(lights.length<4)lights.push(L);});
+    carpetFires(o.fires).forEach(f=>fires.push(f));if(fpi<0&&fires.length)fpi=0;saveFires();
+    selV=new Set(m.v.map((_,i)=>base+i));selL=-1;
+    syncVB();changed();saveSoon();
+    flash('Imported .carpet: '+m.v.length+' vertices, '+m.t.length+' triangles');
+  });
+}
+
 /* ---------- menus ---------- */
 const MENUS={
-  File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export'],['Import FBX...','importfbx'],['Export FBX...','exportfbx'],['Import Blend...','importblend']],
+  File:[['New','new'],['Import OBJ...','import'],['Export OBJ...','export'],['Import FBX...','importfbx'],['Export FBX...','exportfbx'],['Import Blend...','importblend'],null,['Export CARPET','saveproj'],['Import CARPET','openproj']],
   Edit:[['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Shift+Z'],null,['Copy','copy','Ctrl+C'],['Paste','paste','Ctrl+V'],['Duplicate','dup','Ctrl+D'],['Scale','scale'],null,['Delete','del','Del'],['Flip Normals','flip'],['Subdivide','subdiv'],['Merge at Center','merge']],
   Add:[['Triangle','add:tri'],['Quad','add:quad'],['Cube','add:cube'],['Pyramid','add:pyr'],['Octahedron','add:oct'],null,['Miscellaneous',null],['Light','add:light'],['Fire','add:fire'],['Gas','add:gas']],
   Select:[['All','selall','A'],['None','selnone','Alt+A'],['Invert','selinv','Ctrl+I'],['Linked (Object)','linked','L']],
@@ -2394,7 +2506,7 @@ function run(a){
   if(a==='add:gas')return addGas();
   if(a.indexOf('add:')===0)return addPrim(a.slice(4));
   if(a.indexOf('view:')===0)return setView(a.slice(5));
-  const f={new:newMesh,import:importOBJ,export:exportOBJ,importfbx:importFBX,importblend:importBlend,exportfbx:exportFBX,undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
+  const f={new:newMesh,import:importOBJ,export:exportOBJ,importfbx:importFBX,importblend:importBlend,saveproj:saveProject,openproj:openProject,exportfbx:exportFBX,undo,redo,del:deleteSel,flip:flipSel,subdiv:subdivide,merge:mergeSel,selall:selectAll,linked:selectLinked,paint:()=>paintSel($('paint').value),unpaint:()=>paintSel(null),selnone:selectNone,selinv:selectInvert,frame,ortho:toggleOrtho,wire:toggleWire,addlight:addLight,copy:copySel,paste:pasteClip,dup:dupSel,scale:startScale,render:()=>setRender(!R.on),saverender:saveRender}[a];
   if(f)f();
 }
 let openWrap=null;
