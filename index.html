@@ -710,7 +710,7 @@ function selectAll(){
     else if(fires.length)selectFire(0);
   }else{selV=new Set(verts.map((_,i)=>i));changed();}
   xs={v:selV,n:selV.size,l:selL,f:selF,ls:new Set(lights.map((_,i)=>i)),fs:new Set(fires.map((_,i)=>i))};
-  syncLightIcons();syncFireIcons();requestRender();
+  syncLightIcons();syncFireIcons();updateWorkspace();requestRender();
 }
 function selectNone(){selV=new Set();selF=-1;selL=-1;changed();}
 function selectInvert(){const n=new Set();verts.forEach((_,i)=>{if(!selV.has(i))n.add(i);});selV=n;changed();}
