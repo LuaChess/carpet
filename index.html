@@ -213,6 +213,7 @@ dd{margin:0;color:var(--fg-dim)}
       <div class="row"><span class="lbl">Position</span><input id="mp_px" type="number" step="0.1" title="X"><input id="mp_py" type="number" step="0.1" title="Y"><input id="mp_pz" type="number" step="0.1" title="Z"></div>
       <div class="row"><span class="lbl">Rotation</span><input id="mp_rx" type="number" step="5" value="0" title="X"><input id="mp_ry" type="number" step="5" value="0" title="Y"><input id="mp_rz" type="number" step="5" value="0" title="Z"></div>
       <div class="row"><span class="lbl">Size</span><input id="mp_sx" type="number" step="0.1" min="0.01" title="X"><input id="mp_sy" type="number" step="0.1" min="0.01" title="Y"><input id="mp_sz" type="number" step="0.1" min="0.01" title="Z"></div>
+      <div class="row"><label for="mp_w" title="0 = automatic (from size)">Weight</label><input id="mp_w" type="number" step="0.1" min="0" value="0" title="0 = automatic (from size). Heavier objects are harder to push. Needs physics enabled."></div>
       <div class="muted">Rotation turns the mesh by the entered degrees around its center. Select whole meshes (Workspace, Shift for several).</div>
       </div>
       <div class="psec" id="ppLight" hidden>
@@ -1317,7 +1318,7 @@ function physStart(){
       b.nt=b.tix.length;b.ti=b.tix;b.tl=new Float32Array(b.nt*9);
       b.tix.forEach((ti,j)=>{for(let k=0;k<3;k++){const v=verts[tris[ti][k]];b.tl[j*9+k*3]=v[0]-cx;b.tl[j*9+k*3+1]=v[1]-cy;b.tl[j*9+k*3+2]=v[2]-cz;}});
       let rad=0;vs.forEach(i=>{rad=Math.max(rad,Math.hypot(verts[i][0]-cx,verts[i][1]-cy,verts[i][2]-cz));});b.rad=rad;
-      {const lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];vs.forEach(i=>{for(let k=0;k<3;k++){const q=verts[i][k];if(q<lo[k])lo[k]=q;if(q>hi[k])hi[k]=q;}});b.mass=Math.max(0.05,Math.max(0.1,hi[0]-lo[0])*Math.max(0.1,hi[1]-lo[1])*Math.max(0.1,hi[2]-lo[2]));}
+      {const lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];vs.forEach(i=>{for(let k=0;k<3;k++){const q=verts[i][k];if(q<lo[k])lo[k]=q;if(q>hi[k])hi[k]=q;}});b.mass=Math.max(0.05,Math.max(0.1,hi[0]-lo[0])*Math.max(0.1,hi[1]-lo[1])*Math.max(0.1,hi[2]-lo[2]));let uw=0;vs.forEach(i=>{if(ph[i]>1&&ph[i]-1>uw)uw=ph[i]-1;});if(uw>0)b.mass=Math.max(0.05,uw);}
       b.pos=new THREE.Vector3(cx,cy,cz);b.q=new THREE.Quaternion();b.v=new THREE.Vector3();b.w=new THREE.Vector3();
       b.push=new THREE.Vector3();b.pc=0;b.hit=false;b.sl=0;b.R=new Array(9).fill(0);b.soup=null;phIw(b);
     });
@@ -3626,6 +3627,8 @@ function updateMeshProps(){
   let col='#c7c7c7';
   for(const t of tris){if(S.has(t[0])){if(typeof t[3]==='string'&&/^#[0-9a-f]{6}$/i.test(t[3]))col=t[3].toLowerCase();break;}}
   set('mp_col',col);
+  phSync();let w=0;for(const i of S){if(ph[i]>1){w=ph[i]-1;break;}}
+  set('mp_w',rd(w));
 }
 function meshEdit(fn){
   const ms=meshTargets();if(!ms.length)return;
@@ -3650,6 +3653,15 @@ function meshEdit(fn){
       ids.forEach(i=>{t.set(verts[i][0]-b.c[0],verts[i][1]-b.c[1],verts[i][2]-b.c[2]).applyQuaternion(q);verts[i]=[t.x+b.c[0],t.y+b.c[1],t.z+b.c[2]];});
     });
   });
+});
+$('mp_w').addEventListener('change',e=>{
+  const v=parseFloat(e.target.value);if(!Number.isFinite(v)||v<0){updateMeshProps();return;}
+  phSync();
+  meshEdit(ids=>{
+    if(!ids.some(i=>ph[i])){flash('Enable physics on this object first (Physics panel)');return false;}
+    ids.forEach(i=>{if(ph[i])ph[i]=v>0?1+Math.min(v,1e6):1;});
+  });
+  updateMeshProps();
 });
 $('mp_col').addEventListener('change',e=>{
   const ms=meshTargets();if(!ms.length)return;
