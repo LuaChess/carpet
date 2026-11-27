@@ -210,6 +210,7 @@ dd{margin:0;color:var(--fg-dim)}
       <div class="row" id="pp_namerow" hidden><label for="pp_name">Name</label><input id="pp_name" type="text" maxlength="40"></div>
       <div class="psec" id="ppMesh" hidden>
       <div class="row"><label for="mp_col">Color</label><input id="mp_col" type="color" value="#c7c7c7"></div>
+      <div class="row"><label for="mp_mat" title="Shown in Render mode">Material</label><select id="mp_mat"><option value="0">Default</option><option value="1">Metal</option><option value="2">Stone</option><option value="3">Wood</option></select></div>
       <div class="row"><span class="lbl">Position</span><input id="mp_px" type="number" step="0.1" title="X"><input id="mp_py" type="number" step="0.1" title="Y"><input id="mp_pz" type="number" step="0.1" title="Z"></div>
       <div class="row"><span class="lbl">Rotation</span><input id="mp_rx" type="number" step="5" value="0" title="X"><input id="mp_ry" type="number" step="5" value="0" title="Y"><input id="mp_rz" type="number" step="5" value="0" title="Z"></div>
       <div class="row"><span class="lbl">Size</span><input id="mp_sx" type="number" step="0.1" min="0.01" title="X"><input id="mp_sy" type="number" step="0.1" min="0.01" title="Y"><input id="mp_sz" type="number" step="0.1" min="0.01" title="Z"></div>
@@ -364,17 +365,17 @@ let plane='XY',planeOff=0,snapOn=true,snapSize=0.5;
 let undoStack=[],redoStack=[],mv=null,drag=null,lastMouse=null,flashMsg='',flashT=0,edgeCount=0;
 let W=300,H=300,saveT=0;
 let lights=[],selL=-1;
-let bones=[],vb=[],selB=-1,ph=[],vn=[];
+let bones=[],vb=[],selB=-1,ph=[],vn=[],vm=[];
 let images=[],atlas=null,atlasDirty=false,pixelTex=false,imgSaveT=0;const texCache=new Map();
 const NORM={XY:new THREE.Vector3(0,0,1),XZ:new THREE.Vector3(0,1,0),YZ:new THREE.Vector3(1,0,0)};
 const NAXIS={XY:2,XZ:1,YZ:0};
 const AX={x:new THREE.Vector3(1,0,0),y:new THREE.Vector3(0,1,0),z:new THREE.Vector3(0,0,1)};
 
 /* ---------- history, storage ---------- */
-const snap0=()=>JSON.stringify({v:verts,t:tris,l:lights,b:bones,vb:vb,ph:ph,n:vn});
+const snap0=()=>JSON.stringify({v:verts,t:tris,l:lights,b:bones,vb:vb,ph:ph,n:vn,m:vm});
 let poseOn=false,poseSnap=null;
 function pushUndo(){if(poseOn)return;undoStack.push(snap0());if(undoStack.length>100)undoStack.shift();redoStack.length=0;}
-function applySnap(s){const o=JSON.parse(s);verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l:[];bones=Array.isArray(o.b)?o.b:[];vb=Array.isArray(o.vb)?o.vb:[];ph=Array.isArray(o.ph)?o.ph:[];vn=Array.isArray(o.n)?o.n:[];if(selB>=bones.length)selB=-1;syncVB();if(selL>=lights.length)selL=-1;selV=new Set([...selV].filter(i=>i<verts.length));pending=[];changed();}
+function applySnap(s){const o=JSON.parse(s);verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l:[];bones=Array.isArray(o.b)?o.b:[];vb=Array.isArray(o.vb)?o.vb:[];ph=Array.isArray(o.ph)?o.ph:[];vn=Array.isArray(o.n)?o.n:[];vm=Array.isArray(o.m)?o.m:[];if(selB>=bones.length)selB=-1;syncVB();if(selL>=lights.length)selL=-1;selV=new Set([...selV].filter(i=>i<verts.length));pending=[];changed();}
 function undo(){if(mv)return;if(!undoStack.length){flash('Nothing to undo');return;}redoStack.push(snap0());applySnap(undoStack.pop());}
 function redo(){if(mv)return;if(!redoStack.length){flash('Nothing to redo');return;}undoStack.push(snap0());applySnap(redoStack.pop());}
 function validMesh(o){
@@ -382,7 +383,7 @@ function validMesh(o){
     o.t.every(t=>Array.isArray(t)&&(t.length===3||t.length===4)&&[t[0],t[1],t[2]].every(i=>Number.isInteger(i)&&i>=0&&i<o.v.length)&&(t[3]==null||typeof t[3]==='string'));
 }
 function saveSoon(){if(poseOn)return;clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(STORE,snap0());}catch(e){}},400);}
-function loadSaved(){try{const s=localStorage.getItem(STORE);if(!s)return false;const o=JSON.parse(s);if(!validMesh(o))return false;verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l.map(cleanLight).filter(Boolean):[];bones=cleanBones(o.b);vb=Array.isArray(o.vb)?o.vb:[];ph=Array.isArray(o.ph)?o.ph:[];vn=Array.isArray(o.n)?o.n:[];syncVB();return true;}catch(e){return false;}}
+function loadSaved(){try{const s=localStorage.getItem(STORE);if(!s)return false;const o=JSON.parse(s);if(!validMesh(o))return false;verts=o.v;tris=o.t;lights=Array.isArray(o.l)?o.l.map(cleanLight).filter(Boolean):[];bones=cleanBones(o.b);vb=Array.isArray(o.vb)?o.vb:[];ph=Array.isArray(o.ph)?o.ph:[];vn=Array.isArray(o.n)?o.n:[];vm=Array.isArray(o.m)?o.m:[];syncVB();return true;}catch(e){return false;}}
 
 /* ---------- primitives ---------- */
 const CUBE_V=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
@@ -559,6 +560,7 @@ function drawTexPrev(){
 
 /* ---------- editing operations ---------- */
 function vnSync(){while(vn.length<verts.length)vn.push(0);vn.length=verts.length;}
+function vmSync(){while(vm.length<verts.length)vm.push(0);vm.length=verts.length;}
 function removeVerts(set){
   const map=new Int32Array(verts.length).fill(-1);let n=0;const nv=[];
   verts.forEach((v,i)=>{if(!set.has(i)){map[i]=n++;nv.push(v);}});
@@ -566,6 +568,7 @@ function removeVerts(set){
   syncVB();{const nvb=[];verts.forEach((v,i)=>{if(map[i]>=0)nvb.push(vb[i]);});vb=nvb;}
   phSync();{const nph=[];verts.forEach((v,i)=>{if(map[i]>=0)nph.push(ph[i]);});ph=nph;}
   vnSync();{const nvn=[];verts.forEach((v,i)=>{if(map[i]>=0)nvn.push(vn[i]||0);});vn=nvn;}
+  vmSync();{const nvm=[];verts.forEach((v,i)=>{if(map[i]>=0)nvm.push(vm[i]||0);});vm=nvm;}
   verts=nv;
   const ns=new Set();selV.forEach(i=>{if(map[i]>=0)ns.add(map[i]);});selV=ns;
 }
@@ -715,7 +718,7 @@ function selectAll(){
 }
 function selectNone(){selV=new Set();selF=-1;selL=-1;changed();}
 function selectInvert(){const n=new Set();verts.forEach((_,i)=>{if(!selV.has(i))n.add(i);});selV=n;changed();}
-function newMesh(){pushUndo();verts=[];tris=[];bones=[];vb=[];ph=[];vn=[];selB=-1;lights=[];selL=-1;fires=[];selF=-1;fpi=-1;spawnAcc=[];smokeAcc=[];gasAcc=[];saveFires();selV=new Set();pending=[];changed();}
+function newMesh(){pushUndo();verts=[];tris=[];bones=[];vb=[];ph=[];vn=[];vm=[];selB=-1;lights=[];selL=-1;fires=[];selF=-1;fpi=-1;spawnAcc=[];smokeAcc=[];gasAcc=[];saveFires();selV=new Set();pending=[];changed();}
 function median(){const m=[0,0,0];selV.forEach(i=>{m[0]+=verts[i][0];m[1]+=verts[i][1];m[2]+=verts[i][2];});const n=selV.size||1;return m.map(x=>x/n);}
 
 /* ---------- three.js scene ---------- */
@@ -798,7 +801,9 @@ function rebuild(){
       else if(atlas){tuv[t*6+k*2]=1/atlas.W;tuv[t*6+k*2+1]=1/atlas.H;}
     }
   }
-  g.setAttribute('color',new THREE.BufferAttribute(tc,3));g.setAttribute('uv',new THREE.BufferAttribute(tuv,2));setGeom(solid,g);
+  g.setAttribute('color',new THREE.BufferAttribute(tc,3));g.setAttribute('uv',new THREE.BufferAttribute(tuv,2));
+  {const am=new Float32Array(nT*3);for(let t=0;t<nT;t++){const m=vm[tris[t][0]]||0;am[t*3]=am[t*3+1]=am[t*3+2]=m;}g.setAttribute('aMat',new THREE.BufferAttribute(am,1));g.setAttribute('aRest',new THREE.BufferAttribute(p.slice(),3));g.setAttribute('aRestN',new THREE.BufferAttribute(g.attributes.normal.array.slice(),3));}
+  setGeom(solid,g);
   solid.visible=shading==='solid';
   const st=selTris(),sp=new Float32Array(st.length*9);
   st.forEach((ti,j)=>sp.set(p.subarray(ti*9,ti*9+9),j*9));
@@ -838,7 +843,64 @@ const gammaHook=sh=>{
     .replace('#include <dithering_fragment>','gl_FragColor.rgb=pow(max(gl_FragColor.rgb,vec3(0.0)),vec3(1.0/2.2));\n#include <dithering_fragment>');
 };
 const renderMat=new THREE.MeshStandardMaterial({color:0xffffff,vertexColors:true,side:THREE.DoubleSide,roughness:0.6,metalness:0});
-renderMat.onBeforeCompile=gammaHook;
+const matEnv=(()=>{
+  const mk=(a)=>{const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d'),g=x.createRadialGradient(32,32,2,32,32,46);
+    g.addColorStop(0,'rgba(255,255,255,'+a+')');g.addColorStop(.45,'rgba(150,160,175,'+a*0.55+')');g.addColorStop(1,'rgba(30,34,42,1)');
+    x.fillStyle='#1e222a';x.fillRect(0,0,64,64);x.fillStyle=g;x.fillRect(0,0,64,64);return c;};
+  const t=new THREE.CubeTexture([mk(1),mk(.6),mk(.9),mk(.35),mk(.8),mk(.5)]);t.needsUpdate=true;return t;
+})();
+const STONE_URL='https://devforum-uploads.s3.dualstack.us-east-2.amazonaws.com/uploads/original/4X/3/d/5/3d5bdba4d8f9443993a1d94f29d76cbb2adfa9b1.png';
+const blankTex=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1,THREE.RGBAFormat);blankTex.needsUpdate=true;
+const stoneU={stoneTex:{value:blankTex},stoneOn:{value:0}};
+try{const ld=new THREE.TextureLoader();ld.setCrossOrigin('anonymous');
+  ld.load(STONE_URL,t=>{t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=4;t.needsUpdate=true;stoneU.stoneTex.value=t;stoneU.stoneOn.value=1;requestRender();},undefined,()=>{});}catch(e){}
+const MAT_GLSL=`
+uniform sampler2D stoneTex;uniform float stoneOn;
+float mHash(vec3 p){p=fract(p*0.3183099+vec3(0.1,0.2,0.3));p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+float mNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.0-2.0*f);
+  return mix(mix(mix(mHash(i),mHash(i+vec3(1,0,0)),f.x),mix(mHash(i+vec3(0,1,0)),mHash(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(mHash(i+vec3(0,0,1)),mHash(i+vec3(1,0,1)),f.x),mix(mHash(i+vec3(0,1,1)),mHash(i+vec3(1,1,1)),f.x),f.y),f.z);}
+float mFbm(vec3 p){float a=0.5,s=0.0;for(int i=0;i<5;i++){s+=a*mNoise(p);p=p*2.03+vec3(7.1,3.7,1.3);a*=0.5;}return s;}
+`;
+renderMat.envMap=matEnv;
+renderMat.onBeforeCompile=sh=>{
+  gammaHook(sh);
+  sh.uniforms.stoneTex=stoneU.stoneTex;sh.uniforms.stoneOn=stoneU.stoneOn;
+  sh.vertexShader=sh.vertexShader
+    .replace('void main() {','attribute float aMat;attribute vec3 aRest;attribute vec3 aRestN;varying float vMat;varying vec3 vObj;varying vec3 vObjN;\nvoid main() {')
+    .replace('#include <begin_vertex>','#include <begin_vertex>\n vMat=aMat;vObj=aRest;vObjN=aRestN;');
+  sh.fragmentShader=sh.fragmentShader
+    .replace('void main() {','varying float vMat;varying vec3 vObj;varying vec3 vObjN;\n'+MAT_GLSL+'void main() {')
+    .replace('#include <metalnessmap_fragment>',`#include <metalnessmap_fragment>
+ float envK=0.0,specK=1.0;
+ if(vMat>0.5&&vMat<1.5){
+   float st=mNoise(vec3(vObj.x*1.5,vObj.y*70.0,vObj.z*70.0)),fn=mNoise(vObj*45.0);
+   diffuseColor.rgb*=0.9+0.18*st+0.1*fn;
+   roughnessFactor=clamp(0.16+0.12*st+0.04*fn,0.0,1.0);metalnessFactor=1.0;envK=1.15;specK=1.25;
+ }else if(vMat>1.5&&vMat<2.5){
+   float b=mFbm(vObj*3.0),sp=mNoise(vObj*38.0),cr=abs(mNoise(vObj*5.5)-0.5);
+   float v=0.55+0.7*b;v*=0.88+0.24*sp;v*=0.7+0.3*smoothstep(0.0,0.04,cr);
+   vec3 an=pow(abs(vObjN),vec3(4.0));an/=(an.x+an.y+an.z+1e-5);
+   vec3 tx=texture2D(stoneTex,vObj.yz*0.5).rgb*an.x+texture2D(stoneTex,vObj.xz*0.5).rgb*an.y+texture2D(stoneTex,vObj.xy*0.5).rgb*an.z;
+   tx=pow(tx,vec3(2.2));
+   vec3 tint=diffuseColor.rgb/0.58;
+   diffuseColor.rgb=mix(diffuseColor.rgb*v*1.15,tx*tint,stoneOn);roughnessFactor=clamp(0.94+0.06*sp,0.0,1.0);metalnessFactor=0.0;specK=0.2;
+ }else if(vMat>2.5){
+   float w=mNoise(vec3(vObj.x*0.8,vObj.y*0.8,vObj.z*0.8)*2.0)*3.0;
+   float r=sin((vObj.y+w*0.6)*22.0+mNoise(vObj*vec3(2.0,2.0,18.0))*5.0);
+   float g=0.5+0.5*r,fine=mNoise(vObj*vec3(3.0,70.0,3.0));
+   vec3 wd=mix(vec3(0.30,0.14,0.05),vec3(0.14,0.055,0.018),g)*(0.85+0.3*fine);
+   diffuseColor.rgb=wd*(diffuseColor.rgb/0.58);roughnessFactor=0.86+0.1*fine;metalnessFactor=0.0;specK=0.3;
+ }`)
+    .replace('#include <lights_fragment_maps>',`#include <lights_fragment_maps>
+ #if defined( RE_IndirectSpecular )
+ radiance*=envK;
+ #endif
+ #if defined( RE_IndirectDiffuse )
+ iblIrradiance*=0.0;
+ #endif`)
+    .replace('#include <lights_fragment_end>','#include <lights_fragment_end>\n reflectedLight.directSpecular*=specK;');
+};
 renderMat.alphaTest=0.5;editMat.alphaTest=0.5;
 const groundMat=new THREE.MeshStandardMaterial({color:0x888888,roughness:1,metalness:0});
 groundMat.onBeforeCompile=gammaHook;
@@ -846,6 +908,31 @@ const sun=new THREE.DirectionalLight(0xffffff,1);
 sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.bias=-0.0004;sun.shadow.normalBias=0.03;sun.visible=false;
 const sky=new THREE.HemisphereLight(0xffffff,0x444444,0.5);sky.visible=false;
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(600,600),groundMat);ground.receiveShadow=true;ground.visible=false;ground.renderOrder=-1;
+const bounceLights=[0,1,2,3].map(()=>{const l=new THREE.PointLight(0xffffff,0,1,2);l.visible=false;scene.add(l);return l;});
+function syncBounce(rad){
+  const g=solid.geometry,P=g&&g.attributes.position,M=g&&g.attributes.aMat,C=g&&g.attributes.color;
+  bounceLights.forEach(l=>{l.visible=false;l.intensity=0;});
+  if(!P||!M)return;
+  const sd=new THREE.Vector3().subVectors(sun.position,sun.target.position).normalize();
+  const cell=Math.max(0.5,rad*0.6),cl=new Map(),a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),n=new THREE.Vector3(),e1=new THREE.Vector3(),e2=new THREE.Vector3(),mw=solid.matrixWorld;
+  for(let t=0;t<P.count/3;t++){
+    if(Math.abs(M.getX(t*3)-1)>0.5)continue;
+    a.fromBufferAttribute(P,t*3).applyMatrix4(mw);b.fromBufferAttribute(P,t*3+1).applyMatrix4(mw);c.fromBufferAttribute(P,t*3+2).applyMatrix4(mw);
+    n.crossVectors(e1.subVectors(b,a),e2.subVectors(c,a));const ar=n.length()*0.5;if(ar<1e-9)continue;n.normalize();
+    let f=n.dot(sd);if(f<0){n.negate();f=-f;}const w=ar*f;if(w<=0)continue;
+    const cx=(a.x+b.x+c.x)/3,cy=(a.y+b.y+c.y)/3,cz=(a.z+b.z+c.z)/3,k=Math.floor(cx/cell)+','+Math.floor(cy/cell)+','+Math.floor(cz/cell);
+    let o=cl.get(k);if(!o){o={w:0,p:[0,0,0],n:[0,0,0],c:[0,0,0]};cl.set(k,o);}
+    o.w+=w;o.p[0]+=cx*w;o.p[1]+=cy*w;o.p[2]+=cz*w;o.n[0]+=n.x*w;o.n[1]+=n.y*w;o.n[2]+=n.z*w;
+    if(C){o.c[0]+=C.getX(t*3)*w;o.c[1]+=C.getY(t*3)*w;o.c[2]+=C.getZ(t*3)*w;}else{o.c[0]+=w;o.c[1]+=w;o.c[2]+=w;}
+  }
+  const top=[...cl.values()].sort((x,y)=>y.w-x.w).slice(0,bounceLights.length);
+  top.forEach((o,i)=>{
+    const l=bounceLights[i],nn=new THREE.Vector3(o.n[0],o.n[1],o.n[2]).normalize(),sz=Math.sqrt(o.w);
+    l.position.set(o.p[0]/o.w,o.p[1]/o.w,o.p[2]/o.w).addScaledVector(nn,Math.min(cell*0.5,0.2+sz*0.3));
+    l.color.setRGB(Math.pow(o.c[0]/o.w,2.2),Math.pow(o.c[1]/o.w,2.2),Math.pow(o.c[2]/o.w,2.2)).multiply(sun.color);
+    l.distance=Math.max(2,cell*2.5);l.decay=2;l.intensity=Math.min(1.5,0.25+sz*0.6)*sun.intensity*0.6;l.visible=true;l.castShadow=false;
+  });
+}
 const renderFog=new THREE.FogExp2(0xffffff,0.01);
 scene.add(sun,sun.target,sky,ground);
 solid.castShadow=true;solid.receiveShadow=true;
@@ -879,6 +966,7 @@ function prepRender(){
   ground.visible=R.ground;ground.position.z=R.groundZ;groundMat.color.set(R.groundCol);
   renderFog.color.copy(lin(R.skyHor));renderFog.density=R.fog;scene.fog=R.fog>0?renderFog:null;
   syncRenderLights(cx,cy,cz,ext,D);
+  syncBounce(rad);
   skyBackground();
 }
 function setRender(on){
@@ -886,7 +974,7 @@ function setRender(on){
   if(!on){
     solid.material=editMat;editLights.forEach(l=>{l.visible=true;});
     sun.visible=sky.visible=ground.visible=false;scene.fog=null;scene.background=editBg;
-    rLights.forEach(o=>{o.visible=false;});lightGroup.visible=boneGroup.visible=true;
+    rLights.forEach(o=>{o.visible=false;});bounceLights.forEach(o=>{o.visible=false;});lightGroup.visible=boneGroup.visible=true;
     edges.visible=points.visible=faceSel.visible=true;
     gridGroup.visible=$('gridBtn').getAttribute('aria-pressed')==='true';
     rebuild();updateOverlay();updatePlaneGrid();
@@ -1182,6 +1270,30 @@ function phProbe(px,py,pz,S){
   }
   return [nx,ny,nz,inside?d+r:r-d];
 }
+/* swept segment (previous point -> current point) vs triangle soup, stops fast objects tunnelling through thin surfaces */
+function phSweep(px,py,pz,dx,dy,dz,S){
+  const sx=px-dx,sy=py-dy,sz=pz-dz,lx=Math.min(sx,px)-0.01,hx=Math.max(sx,px)+0.01,ly=Math.min(sy,py)-0.01,hy=Math.max(sy,py)+0.01,lz=Math.min(sz,pz)-0.01,hz=Math.max(sz,pz)+0.01;
+  const a=S.a,bb=S.bb;let best=2,bo=-1;
+  for(let i=0;i<S.n;i++){
+    const b=i*6;if(bb[b]>hx||bb[b+3]<lx||bb[b+1]>hy||bb[b+4]<ly||bb[b+2]>hz||bb[b+5]<lz)continue;
+    const o=i*9,ax=a[o],ay=a[o+1],az=a[o+2],e1x=a[o+3]-ax,e1y=a[o+4]-ay,e1z=a[o+5]-az,e2x=a[o+6]-ax,e2y=a[o+7]-ay,e2z=a[o+8]-az;
+    const nx=e1y*e2z-e1z*e2y,ny=e1z*e2x-e1x*e2z,nz=e1x*e2y-e1y*e2x,den=nx*dx+ny*dy+nz*dz;
+    if(Math.abs(den)<1e-14)continue;
+    const t=(nx*(ax-sx)+ny*(ay-sy)+nz*(az-sz))/den;if(t<0||t>1||t>=best)continue;
+    const hx2=sx+dx*t-ax,hy2=sy+dy*t-ay,hz2=sz+dz*t-az;
+    const d00=e1x*e1x+e1y*e1y+e1z*e1z,d01=e1x*e2x+e1y*e2y+e1z*e2z,d11=e2x*e2x+e2y*e2y+e2z*e2z,d20=hx2*e1x+hy2*e1y+hz2*e1z,d21=hx2*e2x+hy2*e2y+hz2*e2z;
+    const dn=d00*d11-d01*d01;if(Math.abs(dn)<1e-18)continue;
+    const v=(d11*d20-d01*d21)/dn,w=(d00*d21-d01*d20)/dn;
+    if(v<-0.01||w<-0.01||v+w>1.01)continue;
+    best=t;bo=i;
+  }
+  if(bo<0)return null;
+  const o=bo*9,ax=a[o],ay=a[o+1],az=a[o+2],e1x=a[o+3]-ax,e1y=a[o+4]-ay,e1z=a[o+5]-az,e2x=a[o+6]-ax,e2y=a[o+7]-ay,e2z=a[o+8]-az;
+  let nx=e1y*e2z-e1z*e2y,ny=e1z*e2x-e1x*e2z,nz=e1x*e2y-e1y*e2x;const l=Math.hypot(nx,ny,nz)||1;nx/=l;ny/=l;nz/=l;
+  if(nx*(sx-ax)+ny*(sy-ay)+nz*(sz-az)<0){nx=-nx;ny=-ny;nz=-nz;}
+  const pen=Math.max(0,-(nx*(px-ax)+ny*(py-ay)+nz*(pz-az)));
+  return [nx,ny,nz,pen+PHR];
+}
 function phRot(q,o){
   const x=q.x,y=q.y,z=q.z,w=q.w,xx=x*x,yy=y*y,zz=z*z,xy=x*y,xz=x*z,yz=y*z,wx=w*x,wy=w*y,wz=w*z;
   o[0]=1-2*(yy+zz);o[1]=2*(xy-wz);o[2]=2*(xz+wy);o[3]=2*(xy+wz);o[4]=1-2*(xx+zz);o[5]=2*(yz-wx);o[6]=2*(xz-wy);o[7]=2*(yz+wx);o[8]=1-2*(xx+yy);
@@ -1231,6 +1343,8 @@ function phStep(h){
   B.forEach(A=>{
     const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9],wp=[];
     for(let k=0;k<A.np;k++){phWorldPt(A,k,P);wp.push([P.x,P.y,P.z]);for(let q=0;q<3;q++){if(P.getComponent(q)<mn[q])mn[q]=P.getComponent(q);if(P.getComponent(q)>mx[q])mx[q]=P.getComponent(q);}}
+    const pv=k=>{const r=new THREE.Vector3(wp[k][0]-A.pos.x,wp[k][1]-A.pos.y,wp[k][2]-A.pos.z),v=phVel(A,r);
+      return v.lengthSq()*h*h>2.5e-5?[v.x*h,v.y*h,v.z*h]:null;};
     const add=(k,nx,ny,nz,d,Bo)=>{
       C.push({a:A,b:Bo||null,p:new THREE.Vector3(wp[k][0],wp[k][1],wp[k][2]),n:new THREE.Vector3(nx,ny,nz),d});
     };
@@ -1240,12 +1354,18 @@ function phStep(h){
     }
     const S=PH.stat;
     if(S&&mn[0]<=S.mx[0]+0.1&&mx[0]>=S.mn[0]-0.1&&mn[1]<=S.mx[1]+0.1&&mx[1]>=S.mn[1]-0.1&&mn[2]<=S.mx[2]+0.1&&mx[2]>=S.mn[2]-0.1){
-      for(let k=0;k<A.np;k++){const r=phProbe(wp[k][0],wp[k][1],wp[k][2],S.soup);if(r)add(k,r[0],r[1],r[2],r[3]);}
+      for(let k=0;k<A.np;k++){const r=phProbe(wp[k][0],wp[k][1],wp[k][2],S.soup);if(r)add(k,r[0],r[1],r[2],r[3]);else{const sv=pv(k);if(sv){const s2=phSweep(wp[k][0],wp[k][1],wp[k][2],sv[0],sv[1],sv[2],S.soup);if(s2)add(k,s2[0],s2[1],s2[2],s2[3]);}}}
+      /* reverse test: vertices of the static objects against this body, so a big falling object cannot swallow a small one */
+      if(S.pts){if(!A.soup)A.soup=phBodySoup(A);const sp=S.pts;let cn=0;
+        for(let i=0;i<sp.length&&cn<60;i+=3){const x=sp[i],y=sp[i+1],z=sp[i+2];
+          if(x<mn[0]-0.05||x>mx[0]+0.05||y<mn[1]-0.05||y>mx[1]+0.05||z<mn[2]-0.05||z>mx[2]+0.05)continue;
+          const r=phProbe(x,y,z,A.soup);
+          if(r){C.push({a:A,b:null,p:new THREE.Vector3(x,y,z),n:new THREE.Vector3(-r[0],-r[1],-r[2]),d:r[3]});cn++;}}}
     }
     B.forEach(O=>{
       if(O===A||A.pos.distanceTo(O.pos)>A.rad+O.rad+0.1)return;
       if(!O.soup)O.soup=phBodySoup(O);
-      for(let k=0;k<A.np;k++){const r=phProbe(wp[k][0],wp[k][1],wp[k][2],O.soup);if(r)add(k,r[0],r[1],r[2],r[3],O);}
+      for(let k=0;k<A.np;k++){const r=phProbe(wp[k][0],wp[k][1],wp[k][2],O.soup);if(r)add(k,r[0],r[1],r[2],r[3],O);else{const sv=pv(k);if(sv){const s2=phSweep(wp[k][0],wp[k][1],wp[k][2],sv[0]-O.v.x*h,sv[1]-O.v.y*h,sv[2]-O.v.z*h,O.soup);if(s2)add(k,s2[0],s2[1],s2[2],s2[3],O);}}}
     });
   });
   B.forEach(b=>{b.soup=null;});
@@ -1309,6 +1429,10 @@ function physStart(){
       cx/=vs.length;cy/=vs.length;cz/=vs.length;
       const step=Math.max(1,Math.ceil(vs.length/120)),ps=[];
       for(let k=0;k<vs.length;k+=step){const v=verts[vs[k]];ps.push(v[0]-cx,v[1]-cy,v[2]-cz);}
+      {const tl=b.tix,st2=Math.max(1,Math.ceil(tl.length/60));
+        for(let j=0;j<tl.length;j+=st2){const t=tris[tl[j]],A0=verts[t[0]],B0=verts[t[1]],C0=verts[t[2]];
+          ps.push((A0[0]+B0[0]+C0[0])/3-cx,(A0[1]+B0[1]+C0[1])/3-cy,(A0[2]+B0[2]+C0[2])/3-cz);
+          ps.push((A0[0]+B0[0])/2-cx,(A0[1]+B0[1])/2-cy,(A0[2]+B0[2])/2-cz);}}
       b.pts=new Float32Array(ps);b.np=ps.length/3;
       let ixx=0,iyy=0,izz=0,ixy=0,ixz=0,iyz=0;
       vs.forEach(i=>{const x=verts[i][0]-cx,y=verts[i][1]-cy,z=verts[i][2]-cz,m=1/vs.length;
@@ -1326,7 +1450,11 @@ function physStart(){
     if(sa.length){
       const a=new Float32Array(sa),mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
       for(let i=0;i<a.length;i+=3)for(let k=0;k<3;k++){if(a[i+k]<mn[k])mn[k]=a[i+k];if(a[i+k]>mx[k])mx[k]=a[i+k];}
-      stat={soup:phSoup(a,a.length/9),mn,mx};
+      const nt=a.length/9,st3=Math.max(1,Math.ceil(nt/500)),sp=[];
+      for(let i=0;i<nt;i+=st3){const o=i*9;
+        sp.push(a[o],a[o+1],a[o+2],a[o+3],a[o+4],a[o+5],a[o+6],a[o+7],a[o+8],
+          (a[o]+a[o+3]+a[o+6])/3,(a[o+1]+a[o+4]+a[o+7])/3,(a[o+2]+a[o+5]+a[o+8])/3);}
+      stat={soup:phSoup(a,nt),mn,mx,pts:new Float32Array(sp)};
     }
     PH={bodies,stat,nT:tris.length,t:performance.now(),raf:0};
     PH.raf=requestAnimationFrame(phFrame);
@@ -1510,7 +1638,7 @@ function syncVB(){
   while(vb.length<verts.length)vb.push(-1);vb.length=verts.length;
   for(let i=0;i<vb.length;i++)if(!(vb[i]>=0&&vb[i]<bones.length))vb[i]=-1;
 }
-function setRig(r){ph=[];vn=[];bones=r?cleanBones(r.b):[];vb=r&&Array.isArray(r.vb)?r.vb.slice():[];selB=-1;syncVB();}
+function setRig(r){ph=[];vn=[];vm=[];bones=r?cleanBones(r.b):[];vb=r&&Array.isArray(r.vb)?r.vb.slice():[];selB=-1;syncVB();}
 function rigLines(){
   if(!bones.length)return [];
   syncVB();
@@ -2419,8 +2547,8 @@ $('snapSize').addEventListener('change',e=>{snapSize=parseFloat(e.target.value)|
 
 /* ---------- .carpet project files ---------- */
 function carpetPack(){
-  syncVB();phSync();vnSync();
-  return JSON.stringify({format:'carpet',version:1,mesh:{v:verts,t:tris,l:lights,b:bones,vb:vb,ph:ph,n:vn},fires:fires,images:images.map(m=>({name:m.name,url:m.url}))});
+  syncVB();phSync();vnSync();vmSync();
+  return JSON.stringify({format:'carpet',version:1,mesh:{v:verts,t:tris,l:lights,b:bones,vb:vb,ph:ph,n:vn,m:vm},fires:fires,images:images.map(m=>({name:m.name,url:m.url}))});
 }
 function carpetRead(txt){
   let o;try{o=JSON.parse(txt);}catch(e){return null;}
@@ -2469,7 +2597,7 @@ function openProject(){
     const m=o.mesh,imap=carpetImages(o,true);
     verts=m.v;tris=m.t.map(t=>carpetTri(t,0,imap));
     lights=Array.isArray(m.l)?m.l.map(cleanLight).filter(Boolean).slice(0,4):[];
-    bones=cleanBones(m.b);vb=Array.isArray(m.vb)?m.vb:[];ph=Array.isArray(m.ph)?m.ph:[];vn=Array.isArray(m.n)?m.n:[];
+    bones=cleanBones(m.b);vb=Array.isArray(m.vb)?m.vb:[];ph=Array.isArray(m.ph)?m.ph:[];vn=Array.isArray(m.n)?m.n:[];vm=Array.isArray(m.m)?m.m:[];
     selB=-1;selL=-1;selV=new Set();pending=[];
     fires=carpetFires(o.fires);selF=-1;fpi=fires.length?0:-1;spawnAcc=[];smokeAcc=[];gasAcc=[];saveFires();
     syncVB();changed();frame();saveSoon();
@@ -2481,8 +2609,9 @@ function importProject(){
     pushUndo();
     syncVB();phSync();vnSync();
     const m=o.mesh,base=verts.length,bb=bones.length,imap=carpetImages(o,false);
-    const nb=cleanBones(m.b),nvb=Array.isArray(m.vb)?m.vb:[],nph=Array.isArray(m.ph)?m.ph:[],nvn=Array.isArray(m.n)?m.n:[];
-    m.v.forEach((v,i)=>{verts.push(v);const k=nvb[i];vb.push(Number.isInteger(k)&&k>=0&&k<nb.length?k+bb:-1);ph.push(nph[i]?1:0);vn.push(nvn[i]||0);});
+    const nb=cleanBones(m.b),nvb=Array.isArray(m.vb)?m.vb:[],nph=Array.isArray(m.ph)?m.ph:[],nvn=Array.isArray(m.n)?m.n:[],nvm=Array.isArray(m.m)?m.m:[];
+    vmSync();
+    m.v.forEach((v,i)=>{verts.push(v);const k=nvb[i];vb.push(Number.isInteger(k)&&k>=0&&k<nb.length?k+bb:-1);ph.push(nph[i]?1:0);vn.push(nvn[i]||0);vm.push(nvm[i]||0);});
     m.t.forEach(t=>tris.push(carpetTri(t,base,imap)));
     nb.forEach(b=>{b.par=b.par>=0?b.par+bb:-1;bones.push(b);});
     (Array.isArray(m.l)?m.l.map(cleanLight).filter(Boolean):[]).forEach(L=>{if(lights.length<4)lights.push(L);});
@@ -3627,6 +3756,7 @@ function updateMeshProps(){
   let col='#c7c7c7';
   for(const t of tris){if(S.has(t[0])){if(typeof t[3]==='string'&&/^#[0-9a-f]{6}$/i.test(t[3]))col=t[3].toLowerCase();break;}}
   set('mp_col',col);
+  vmSync();set('mp_mat',vm[[...S][0]]||0);
   phSync();let w=0;for(const i of S){if(ph[i]>1){w=ph[i]-1;break;}}
   set('mp_w',rd(w));
 }
@@ -3667,6 +3797,12 @@ $('mp_col').addEventListener('change',e=>{
   const ms=meshTargets();if(!ms.length)return;
   const S=new Set();ms.forEach(m=>m.ids.forEach(i=>S.add(i)));const hex=e.target.value;
   pushUndo();tris.forEach((t,i)=>{if(S.has(t[0]))tris[i]=[t[0],t[1],t[2],hex];});changed();
+});
+$('mp_mat').addEventListener('change',e=>{
+  const ms=meshTargets();if(!ms.length)return;
+  const S=new Set();ms.forEach(m=>m.ids.forEach(i=>S.add(i)));const v=parseInt(e.target.value)||0;
+  pushUndo();vmSync();S.forEach(i=>{vm[i]=v;});changed();
+  if(v&&!R.on)flash('Material is shown in Render mode');
 });
 $('propsPanel').addEventListener('toggle',updateMeshProps);
 
